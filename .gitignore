@@ -1,0 +1,8 @@
+models/
+logs/
+password
+llama.cpp/
+llama.cpp-mtp/
+venv-*/
+python/
+__pycache__/
