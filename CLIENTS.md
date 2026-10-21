@@ -80,6 +80,28 @@ Ce que vous devez obtenir :
 - **`401`** : le mot de passe est faux, ou la variable n'est pas définie dans ce terminal.
 - **Rien, puis un délai dépassé (timeout)** : mauvaise IP, Mac en veille, ou vous n'êtes pas sur le même réseau.
 
+### Niveau de réflexion
+
+Qwen3.8 réfléchit avant de répondre. Chaque requête peut fixer deux réglages :
+- **`reasoning_effort`** dit au modèle à quel point réfléchir : `medium`, `high` ou `xhigh`. N'envoyez jamais `max` : le modèle refuse la requête avec une erreur 500.
+- **`thinking_budget_tokens`** fixe le plafond : une fois atteint, le serveur arrête la réflexion et le modèle écrit sa réponse.
+
+| Niveau | `reasoning_effort` | `thinking_budget_tokens` |
+|---|---|---|
+| Medium | `medium` | 2048 |
+| High | `high` | 8192 |
+| Max (**conseillé par défaut**) | `xhigh` | 24576 |
+| rien envoyé | `xhigh` | 24576 (plafond par défaut du serveur, = Max) |
+
+Les guides OpenCode, Qwen Code et Hermes configurent Max par défaut, avec une commande pour changer de niveau. Exemple en bash :
+```bash
+curl http://192.168.1.92:8080/v1/chat/completions \
+  -H "Authorization: Bearer $MAC_LLM_PASSWORD" -H "Content-Type: application/json" \
+  -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"Bonjour !"}],"reasoning_effort":"medium","thinking_budget_tokens":2048}'
+```
+
+**Dans l'interface web**, le bouton de réflexion (icône ampoule, à gauche du nom du modèle) propose Low (512), Medium (2 048), High (8 192) et Max. Max n'envoie aucun plafond : c'est celui du serveur qui s'applique, 24 576 tokens.
+
 ## Ce qui a été testé
 
 Tests faits le 20 octobre 2026, depuis le Mac lui-même mais via l'IP du réseau (`192.168.1.92`) et avec le mot de passe, à partir d'une installation neuve de chaque client :
@@ -104,6 +126,7 @@ Ouvrez **`http://192.168.1.92:8080`** dans un navigateur. C'est l'interface de c
 - **Au premier accès**, le serveur répond « accès refusé » et l'interface affiche une fenêtre **« Enter API Key »**. Tapez le mot de passe partagé. L'interface le vérifie, puis se connecte.
 - **Le mot de passe est mémorisé dans votre navigateur**, dans les réglages de l'interface. Vous pouvez le changer dans **Settings → API Key**.
 - **Les conversations restent dans votre navigateur**, pas sur le serveur.
+- **Cette documentation est disponible dans l'interface** : entrée **Documentation** sous Settings, ou directement `http://192.168.1.92:8080/?docs`. Elle est lisible sans mot de passe. On y trouve ce guide, puis les guides pas à pas OpenCode, Qwen Code et Hermes.
 
 ## 3. Agents de code en terminal
 
@@ -113,7 +136,7 @@ Le client open source le plus utilisé. **Guide pas à pas : [`clients/OPENCODE.
 
 En résumé :
 1. Installez-le avec `npm install -g opencode-ai`.
-2. Copiez la configuration ci-dessous dans `~/.config/opencode/opencode.json`, ou dans `opencode.json` à la racine du projet.
+2. Copiez la configuration ci-dessous dans `~/.config/opencode/opencode.json`, ou dans `opencode.json` à la racine du projet. Le guide donne une commande qui crée ce fichier, avec en plus les niveaux de réflexion Medium, High et Max (**Ctrl+T** pour changer).
 3. Lancez `opencode`.
 
 ```json
@@ -144,7 +167,7 @@ Un fork de Gemini CLI publié par l'équipe Qwen, qui accepte n'importe quel ser
 
 En résumé :
 1. Installez-le avec `npm install -g @qwen-code/qwen-code@latest` (Node.js 22 ou plus).
-2. Créez `~/.qwen/settings.json` (contenu complet dans le guide).
+2. Créez `~/.qwen/settings.json` avec la commande du guide, qui règle aussi le niveau de réflexion.
 3. Lancez `qwen`.
 
 ### Gemini CLI
@@ -265,7 +288,7 @@ models:
 | `401` / « Invalid API Key » / « access denied » | mauvais mot de passe, ou variable `MAC_LLM_PASSWORD` absente de ce terminal | `echo $MAC_LLM_PASSWORD` (bash) ou `echo $env:MAC_LLM_PASSWORD` (PowerShell) ; rouvrez le terminal après un `SetEnvironmentVariable` |
 | Délai dépassé (timeout), « connection refused » | mauvaise IP, Mac en veille ou éteint, ou pas sur le même réseau | testez avec `curl` (section 1), puis demandez l'IP actuelle à Amaury |
 | Réponses lentes | un autre utilisateur est en cours : le serveur traite **2 requêtes à la fois au maximum** ; un très long prompt (plus de 100 000 tokens) prend plusieurs minutes à lire | patientez ; évitez d'envoyer des dépôts entiers d'un coup |
-| Le modèle « réfléchit » longtemps | la réflexion est plafonnée à 4 096 tokens côté serveur | normal pour une question difficile ; pour une question simple, désactivez la réflexion si votre client le permet |
+| Le modèle « réfléchit » longtemps | niveau Max : jusqu'à 24 576 tokens de réflexion (environ 8 minutes) | normal pour une question difficile ; pour une question simple, passez en Medium (section 1, « Niveau de réflexion ») |
 | Erreurs d'appel d'outils (tool calling), JSON brut affiché | client configuré en mode « Ollama » au lieu d'« OpenAI compatible » | choisissez le fournisseur **OpenAI compatible**, avec la base URL qui finit par `/v1` |
 | « context length exceeded » / contexte dépassé | la conversation dépasse 262 144 tokens | compactez (`/compact`, `/compress` selon le client) ou démarrez une nouvelle session |
 | Mauvais nom de modèle | le modèle de secours est chargé à la place du principal | `GET /v1/models` (section 1) indique le modèle disponible en ce moment |

@@ -1,0 +1,138 @@
+/* Vue documentation injectee dans l'interface web de llama-server (voir inject.js).
+   Tous les selecteurs sont limites a #setup-llm-docs pour ne pas toucher au reste de l'interface. */
+#setup-llm-docs {
+  --d-bg: #ffffff;
+  --d-panel: #f6f6f7;
+  --d-text: #1c1c1e;
+  --d-muted: #6b6b70;
+  --d-border: #e3e3e6;
+  --d-accent: #2563eb;
+  --d-code: #f0f0f2;
+}
+@media (prefers-color-scheme: dark) {
+  html:not(.light) #setup-llm-docs {
+    --d-bg: #0f0f10;
+    --d-panel: #18181a;
+    --d-text: #ececee;
+    --d-muted: #9a9aa0;
+    --d-border: #2a2a2e;
+    --d-accent: #7aa7ff;
+    --d-code: #232327;
+  }
+}
+html.dark #setup-llm-docs {
+  --d-bg: #0f0f10;
+  --d-panel: #18181a;
+  --d-text: #ececee;
+  --d-muted: #9a9aa0;
+  --d-border: #2a2a2e;
+  --d-accent: #7aa7ff;
+  --d-code: #232327;
+}
+#setup-llm-docs {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  background: var(--d-bg);
+  color: var(--d-text);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#setup-llm-docs[hidden] { display: none; }
+#setup-llm-docs * { box-sizing: border-box; }
+#setup-llm-docs nav {
+  width: 15rem;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 1.25rem 0.75rem;
+  background: var(--d-panel);
+  border-right: 1px solid var(--d-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+#setup-llm-docs nav a {
+  color: var(--d-text);
+  text-decoration: none;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+}
+#setup-llm-docs nav a:hover,
+#setup-llm-docs nav a.active { background: var(--d-border); }
+#setup-llm-docs nav a.active { font-weight: 600; }
+#setup-llm-docs nav a.back { color: var(--d-muted); margin-bottom: 0.75rem; }
+#setup-llm-docs nav .label {
+  color: var(--d-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.75rem;
+}
+#setup-llm-docs main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 2rem 2.5rem 4rem;
+}
+#setup-llm-docs main > * { max-width: 54rem; }
+#setup-llm-docs h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 1rem; font-weight: 700; }
+#setup-llm-docs h2 { font-size: 1.4rem; margin: 2.25rem 0 0.75rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--d-border); font-weight: 650; }
+#setup-llm-docs h3 { font-size: 1.15rem; margin: 1.75rem 0 0.5rem; font-weight: 650; }
+#setup-llm-docs p { margin: 0.75rem 0; }
+#setup-llm-docs ul, #setup-llm-docs ol { margin: 0.75rem 0; padding-left: 1.5rem; }
+#setup-llm-docs ul { list-style: disc; }
+#setup-llm-docs ol { list-style: decimal; }
+#setup-llm-docs li { margin: 0.25rem 0; }
+#setup-llm-docs a { color: var(--d-accent); text-decoration: underline; }
+#setup-llm-docs strong { font-weight: 650; }
+#setup-llm-docs code {
+  font: 0.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--d-code);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+}
+#setup-llm-docs pre {
+  position: relative;
+  background: var(--d-panel);
+  border: 1px solid var(--d-border);
+  border-radius: 0.6rem;
+  padding: 0.9rem 1rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  line-height: 1.45;
+}
+#setup-llm-docs pre code { background: none; padding: 0; font-size: 0.85rem; white-space: pre; }
+#setup-llm-docs pre .copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  font: 0.75rem -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--d-muted);
+  background: var(--d-bg);
+  border: 1px solid var(--d-border);
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+}
+#setup-llm-docs pre .copy:hover { color: var(--d-text); }
+#setup-llm-docs table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1rem 0; }
+#setup-llm-docs th, #setup-llm-docs td { border: 1px solid var(--d-border); padding: 0.4rem 0.7rem; text-align: left; vertical-align: top; }
+#setup-llm-docs th { background: var(--d-panel); font-weight: 650; }
+#setup-llm-docs blockquote { margin: 1rem 0; padding: 0.25rem 1rem; border-left: 3px solid var(--d-border); color: var(--d-muted); }
+
+@media (max-width: 760px) {
+  #setup-llm-docs { flex-direction: column; }
+  #setup-llm-docs nav {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--d-border);
+    padding: 0.75rem 1rem;
+  }
+  #setup-llm-docs nav .label { display: none; }
+  #setup-llm-docs nav a.back { margin-bottom: 0; }
+  #setup-llm-docs main { padding: 1.25rem 1rem 3rem; }
+}

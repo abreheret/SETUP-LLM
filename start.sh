@@ -24,9 +24,18 @@ echo "===== $(date '+%F %T') demarrage profil $PROFILE ($ENGINE, alias $ALIAS) =
 
 # caffeinate -s : empeche la veille systeme uniquement sur secteur, sans effet sur batterie.
 if [[ $ENGINE == llama ]]; then
+  # Interface web avec l'entree Documentation (tools/build-webui.py), seulement si elle a ete copiee
+  # depuis cette version de llama-server ; sinon l'interface integree est servie.
+  WEBUI_ARGS=()
+  if [[ -f $ROOT/webui/.llama-version ]] &&
+     [[ $(<$ROOT/webui/.llama-version) == $(/opt/homebrew/bin/llama-server --version 2>&1 | head -1) ]]; then
+    WEBUI_ARGS=(--path $ROOT/webui)
+  elif [[ -d $ROOT/webui ]]; then
+    echo "webui/ copiee depuis une autre version de llama-server : interface integree servie (relancer tools/build-webui.py)"
+  fi
   exec /usr/bin/caffeinate -s /opt/homebrew/bin/llama-server -m $MODEL --alias $ALIAS \
     --host $HOST --port $PORT --api-key-file $PASSWORD_FILE \
-    $LLAMA_COMMON $ARGS
+    $LLAMA_COMMON $WEBUI_ARGS $ARGS
 else
   # mlx-dspark n'a pas d'option fichier pour la cle : elle est lue ici et passee en argument.
   exec /usr/bin/caffeinate -s $DSPARK_BIN serve --model $MODEL \

@@ -11,7 +11,7 @@ Hermes Agent est l'agent open source de Nous Research ([NousResearch/hermes-agen
 
 Ce guide vous mène de zéro à une session qui fonctionne avec le modèle du Mac, **sans qu'aucune donnée ne parte vers un service cloud**.
 
-> Testé le 20 octobre 2026 avec Hermes Agent **0.22.2**, sur macOS, avec le script officiel et la configuration manuelle de la section 3.2 : lecture d'un fichier, modification, commande shell. Pendant le test, Hermes ne s'est connecté qu'au Mac (`192.168.1.92`). L'assistant `hermes model`, l'installation Windows, l'application Desktop et le backend SSH n'ont pas été testés. Amaury l'utilise surtout sous **WSL2**.
+> Testé le 20 octobre 2026 avec Hermes Agent **0.22.2**, sur macOS, avec le script officiel et la configuration manuelle de la section 3.2 : lecture d'un fichier, modification, commande shell. Pendant le test, Hermes ne s'est connecté qu'au Mac (`192.168.1.92`). L'assistant `hermes model`, l'installation Windows, l'application Desktop et le backend SSH n'ont pas été testés. Amaury l'utilise surtout sous **WSL2**. Commande de création de `config.yaml` et niveaux de réflexion testés le 21 octobre 2026 (bash et zsh) ; `/reasoning` non testé.
 
 ## 1. Prérequis
 
@@ -64,15 +64,39 @@ echo 'MAC_LLM_PASSWORD=<MOT_DE_PASSE>' >> ~/.hermes/.env
 chmod 600 ~/.hermes/.env
 ```
 
-**`~/.hermes/config.yaml`** : sauvegardez d'abord celui qui existe (`cp ~/.hermes/config.yaml ~/.hermes/config.yaml.bak`), puis remplacez tout son contenu par :
-```yaml
+**`~/.hermes/config.yaml`** : la commande ci-dessous remplace tout son contenu, après l'avoir sauvegardé en `config.yaml.bak`. Réglez les deux variables en tête :
+- **`MAC_IP`** : `192.168.1.92` est l'IP du Mac à la maison ; changez-la si on vous en donne une autre ;
+- **`NIVEAU`** : le niveau de réflexion, `medium`, `high` ou `max` (par défaut ; voir 3.4).
+
+```bash
+MAC_IP=192.168.1.92
+NIVEAU=max   # medium, high ou max
+case $NIVEAU in
+  medium) EFFORT=medium; BUDGET=2048 ;;
+  high)   EFFORT=high;   BUDGET=8192 ;;
+  *)      EFFORT=xhigh;  BUDGET=24576 ;;
+esac
+mkdir -p ~/.hermes
+[ -f ~/.hermes/config.yaml ] && cp ~/.hermes/config.yaml ~/.hermes/config.yaml.bak
+cat > ~/.hermes/config.yaml <<EOF
 # ~/.hermes/config.yaml - Hermes Agent relie au serveur LLM du Mac M5 Max
 model:
   provider: custom
-  base_url: http://192.168.1.92:8080/v1
+  base_url: http://${MAC_IP}:8080/v1
   default: qwen3.8-flash-next
   key_env: MAC_LLM_PASSWORD
   context_length: 262144
+
+# Niveau de reflexion ($NIVEAU) : effort demande au modele...
+agent:
+  reasoning_effort: ${EFFORT}
+
+# ... et plafond de reflexion, envoye avec chaque requete vers le Mac.
+custom_providers:
+  - name: mac-m5
+    base_url: http://${MAC_IP}:8080/v1
+    extra_body:
+      thinking_budget_tokens: ${BUDGET}
 
 # Taches annexes : tout passe par le Mac, jamais par OpenRouter ou Nous Portal.
 auxiliary:
@@ -96,6 +120,7 @@ telemetry:
   shared_metrics:
     enabled: false
     send: false
+EOF
 ```
 
 Puis complétez les options par défaut. Cette commande garde vos réglages ; répondez `N` à « Configure new keys? » :
@@ -143,6 +168,21 @@ ss -tnp | grep -E 'python|hermes'
 **Ce qu'il ne faut pas utiliser** :
 - **`/moa`** (Mixture of Agents) : il fait appel à plusieurs modèles prédéfinis, en général via OpenRouter.
 - **`hermes setup --portal`**, et toute connexion à Nous Portal ou à OpenRouter.
+
+### 3.4 Niveau de réflexion : Medium, High ou Max
+
+Qwen3.8 réfléchit avant de répondre. Comme dans l'interface web du serveur, vous choisissez combien de temps :
+
+| `NIVEAU` | Plafond de réflexion | Pour quoi |
+|---|---|---|
+| `medium` | 2 048 tokens | questions simples, réponses rapides |
+| `high` | 8 192 tokens | usage courant |
+| `max` (**par défaut**) | 24 576 tokens | problèmes difficiles, débogage |
+
+- **Changer de niveau** : relancez la commande de la section 3.2 avec une autre valeur de `NIVEAU`, puis `hermes config migrate`.
+- **Deux réglages par niveau.** `agent.reasoning_effort` dit au modèle à quel point réfléchir. `extra_body.thinking_budget_tokens` fixe le plafond : une fois atteint, le serveur arrête la réflexion et le modèle écrit sa réponse.
+- **`/reasoning medium` ou `/reasoning high`** change l'effort pendant une session, mais pas le plafond. N'utilisez jamais `/reasoning max` ni `ultra` : le modèle n'accepte que `low`, `medium`, `high` et `xhigh`, et refuse la requête avec une erreur 500.
+- **Pourquoi pas de niveau « illimité »** : sans plafond, le modèle a déjà réfléchi plus de 40 000 tokens sur un problème sans jamais conclure.
 
 ## 4. Premier lancement
 
@@ -231,7 +271,8 @@ Le modèle reste celui du Mac. Seules les commandes partent sur `build01`.
 
 - **Contexte : `context_length: 262144`.** Le serveur garantit cette taille par utilisateur, même quand deux personnes l'utilisent en même temps. Hermes demande au moins 64 000 tokens.
 - **Taille du premier prompt.** Hermes envoie un prompt système et des définitions d'outils volumineux. Avec la configuration ci-dessus, le premier message fait **11 328 tokens**, mesurés dans les journaux du serveur. Le serveur met environ 16 s à le lire, puis le garde en cache. Il reste donc **environ 250 000 tokens** pour votre conversation. Si vous réactivez des outils, ce premier prompt grossit.
-- **Température** : laissez la valeur par défaut. Le serveur applique les réglages recommandés pour Qwen3.8 et plafonne la réflexion du modèle à 4 096 tokens.
+- **Température** : laissez la valeur par défaut. Le serveur applique les réglages recommandés pour Qwen3.8.
+- **Réflexion** : Max par défaut ; `medium` pour les petites tâches (section 3.4).
 - **Fonctions cloud** : désactivées par la section 3.3.
 
 ## 7. Dépannage

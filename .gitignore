@@ -6,3 +6,5 @@ llama.cpp-mtp/
 venv-*/
 python/
 __pycache__/
+webui/
+webui.tmp/

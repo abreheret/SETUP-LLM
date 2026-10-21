@@ -27,7 +27,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
   - L'embedding n-gram (`per_layer_token_embd.weight`, 26,8 Gio) reste sur le SSD, lu à la demande (`-ot "per_layer_token_embd\.weight=CPU"`, mmap). Il n'occupe donc pas de mémoire GPU.
   - Qualité mesurée par Unsloth : 92,3 % d'accord top-1 avec BF16, contre 88,3 % pour UD-Q3_K_XL.
 - **Tête MTP autonome** (`mtp-…-Q8_0.gguf`) : la version « shared » ne se charge pas avec le llama.cpp Homebrew.
-- **Réflexion plafonnée à 4 096 tokens** (`--reasoning-budget`). Sans plafond, le modèle a réfléchi plus de 16 000 tokens sur une question C++ sans conclure.
+- **Réflexion plafonnée à 24 576 tokens par défaut** (`--reasoning-budget`). Sans plafond, le modèle a réfléchi plus de 40 000 tokens sur un problème sans conclure. Chaque requête peut fixer son propre plafond avec `thinking_budget_tokens` : les guides clients proposent les niveaux Medium (2 048), High (8 192) et Max (24 576).
 
 ## 2. Démarrer, arrêter, changer de modèle
 
@@ -55,6 +55,11 @@ Tous les paramètres sont dans **`models.conf`** :
 
 - **API** : `http://<IP_DU_MAC>:8080/v1`, avec l'en-tête `Authorization: Bearer <mot de passe>`. Le mot de passe est dans `password` (droits 600, exclu de git).
 - **Interface web** : `http://<IP_DU_MAC>:8080`. Elle demande le mot de passe au premier accès.
+- **Documentation dans l'interface web** : entrée **Documentation** sous Settings, ou directement `http://<IP_DU_MAC>:8080/?docs`. Elle reprend `CLIENTS.md` et les guides `clients/*.md`, et reste lisible sans mot de passe.
+  - **D'où vient la page** : llama-server sert `webui/` (`--path`), une copie de son interface intégrée à laquelle `tools/build-webui.py` ajoute l'entrée de menu et la doc. La doc est intégrée à `index.html` : llama-server ne sert sans mot de passe que les fichiers de son interface intégrée, un fichier ajouté (`docs/…`) demanderait la clé.
+  - **Navigateurs déjà venus** : l'interface est mise en cache par un service worker. Au premier passage après une modification, elle affiche « Update available » : cliquez sur **Reload**.
+  - **Après une modification des fichiers `.md`** : relancez `uv run --no-project --with markdown python tools/build-webui.py`. Pas besoin de redémarrer le service.
+  - **Après une mise à jour de llama.cpp** : `start.sh` détecte que la copie vient d'une autre version et sert l'interface intégrée, sans doc. Relancez le même script, puis `launchctl kickstart -k gui/$(id -u)/fr.local.llm-server`.
 - **Guides pour les utilisateurs** :
   - `CLIENTS.md` : tous les clients (OpenCode, Qwen Code, Aider, Hermes, Codex, éditeurs, dépannage) ;
   - `clients/OPENCODE.md`, `clients/QWEN-CODE.md` et `clients/HERMES.md` : les guides pas à pas.
@@ -154,7 +159,8 @@ Le script rejoue toute l'installation et peut être relancé sans risque : chaqu
 7. installe le LaunchAgent ;
 8. règle la veille avec `pmset` (`sudo`) ;
 9. autorise les serveurs dans le pare-feu s'il est actif (`sudo`) ;
-10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans).
+10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) ;
+11. construit `webui/` (interface web avec la documentation clients) et redémarre le service pour la servir.
 
 Il demande confirmation avant chaque `sudo` et chaque gros téléchargement, sauf avec `--yes`. Installé dans un autre dossier que `/Users/amaury/DEV/SETUP-LLM`, il adapte les chemins absolus des scripts.
 
@@ -177,8 +183,10 @@ Il faut un jeton de type « Read », copié dans le presse-papiers.
 | `tools/bench.py` | vitesse de génération (code et prose) : `PORT=8080 MODEL=qwen3.8-flash-next python3 tools/bench.py essai 3` |
 | `tools/load.py` | test de charge avec 1 puis 2 utilisateurs et prompts longs : `python3 tools/load.py essai 60000` |
 | `CLIENTS.md`, `clients/*.md` | guides de connexion pour les utilisateurs |
+| `tools/build-webui.py` | construit `webui/` : copie de l'interface web de llama-server, avec l'entrée Documentation et la doc clients en HTML |
+| `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrée de menu et affichage de la doc), `docs.css` (style de la doc) |
 
-Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `venv-dspark/`, `python/`.
+Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `venv-dspark/`, `python/`, `webui/` (régénéré par `tools/build-webui.py`).
 
 ## 11. Problèmes connus
 

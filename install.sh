@@ -312,5 +312,28 @@ CODE_KO=$(curl -s -o /dev/null -w '%{http_code}' http://$IP:8080/v1/models)
 [[ $CODE_OK == 200 ]] && ok "API via $IP : 200 avec mot de passe" || warn "API via $IP : $CODE_OK avec mot de passe (voir $LOG_DIR/llm-server.log)"
 [[ $CODE_KO == 401 ]] && ok "API sans mot de passe : 401" || warn "API sans mot de passe : $CODE_KO (attendu 401)"
 
+# ---------------------------------------------------------------------------------------------
+step "Etape 11 : documentation clients dans l'interface web"
+# ---------------------------------------------------------------------------------------------
+if [[ $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf) == 27b-dspark ]]; then
+  warn "etape sautee : le profil 27b-dspark (mlx-dspark) n'a pas d'interface web"
+elif uv run --no-project --with markdown python $ROOT/tools/build-webui.py; then
+  if curl -s -H 'Accept-Encoding: gzip' http://127.0.0.1:8080/ | gunzip 2>/dev/null | has setup-llm-docs-inject; then
+    ok "interface web avec l'entree Documentation deja servie (doc regeneree)"
+  else
+    launchctl kickstart -k gui/$(id -u)/$AGENT_LABEL
+    echo "  redemarrage du service pour servir webui/ (jusqu'a 3 min)..."
+    for i in {1..90}; do
+      curl -s -m 2 -H "Authorization: Bearer $(<$PASSWORD_FILE)" http://127.0.0.1:8080/v1/models | has '"id"' && break
+      sleep 2
+    done
+    curl -s -H 'Accept-Encoding: gzip' http://127.0.0.1:8080/ | gunzip 2>/dev/null | has setup-llm-docs-inject &&
+      ok "interface web avec l'entree Documentation : http://$IP:8080/?docs" ||
+      warn "l'interface web n'a pas l'entree Documentation (voir $LOG_DIR/llm-server.log)"
+  fi
+else
+  warn "tools/build-webui.py a echoue : l'interface integree reste servie, sans documentation"
+fi
+
 $ROOT/status.sh
 print -P "\n%F{green}Installation terminee.%f Guides clients : $ROOT/CLIENTS.md et $ROOT/clients/"
