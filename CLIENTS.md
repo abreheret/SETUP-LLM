@@ -252,7 +252,7 @@ Ces extensions n'ont pas été testées. Leur configuration vient de leur docume
    - **Base URL** : `http://192.168.1.92:8080/v1`
    - **API Key** : le mot de passe partagé
    - **Model ID** : `qwen3.8-flash-next`
-4. Dans **Model Configuration**, mettez **Context Window** à `262144`. Laissez **Image Support** décoché.
+4. Dans **Model Configuration**, mettez **Context Window** à `262144`. Cochez **Image Support** : le modèle principal lit les images (pas le modèle de secours `qwen3.8-27b`).
 
 **Continue** (VS Code et JetBrains). Modifiez `~/.continue/config.yaml` (sous Windows : `%USERPROFILE%\.continue\config.yaml`) :
 ```yaml

@@ -18,7 +18,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
 
 | Profil | Modèle exposé (`model`) | Fichiers | Usage |
 |---|---|---|---|
-| `flash` (par défaut) | `qwen3.8-flash-next` | Qwen3.8-Flash-Next **UD-Q4_K_XL** (103,7 Gio, 4 fichiers) + tête MTP Q8_0 autonome | modèle principal : MoE 125B, environ 6B actifs, plus 51B d'embedding n-gram |
+| `flash` (par défaut) | `qwen3.8-flash-next` | Qwen3.8-Flash-Next **UD-Q4_K_XL** (103,7 Gio, 4 fichiers) + tête MTP Q8_0 autonome + vision (`mmproj-F16.gguf`, 0,9 Go) | modèle principal : MoE 125B, environ 6B actifs, plus 51B d'embedding n-gram |
 | `27b` | `qwen3.8-27b` | Qwen3.8-27B **Q8_0** GGUF (29 Go) | secours, sous llama.cpp, 2 utilisateurs en parallèle |
 | `27b-dspark` | `qwen3.8-27b` | Qwen3.8-27B MLX 8 bits + drafter DFlash 2 | secours rapide pour 1 utilisateur (requêtes traitées l'une après l'autre) |
 
@@ -27,6 +27,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
   - L'embedding n-gram (`per_layer_token_embd.weight`, 26,8 Gio) reste sur le SSD, lu à la demande (`-ot "per_layer_token_embd\.weight=CPU"`, mmap). Il n'occupe donc pas de mémoire GPU.
   - Qualité mesurée par Unsloth : 92,3 % d'accord top-1 avec BF16, contre 88,3 % pour UD-Q3_K_XL.
 - **Tête MTP autonome** (`mtp-…-Q8_0.gguf`) : la version « shared » ne se charge pas avec le llama.cpp Homebrew.
+- **Vision** (`--mmproj …/mmproj/mmproj-F16.gguf`, ajoutée le 24 octobre 2026) : sans ce fichier, toute image envoyée échoue avec `image input is not supported - hint: … you may need to provide the mmproj`. Le MTP reste actif : 60,7 tok/s mesurés sur une réponse à une image. Le profil `27b` n'a pas encore de vision.
 - **Réflexion plafonnée à 24 576 tokens par défaut** (`--reasoning-budget`). Sans plafond, le modèle a réfléchi plus de 40 000 tokens sur un problème sans conclure. Chaque requête peut fixer son propre plafond avec `thinking_budget_tokens` : les guides clients proposent les niveaux Medium (2 048), High (8 192) et Max (24 576).
 
 ## 2. Démarrer, arrêter, changer de modèle
@@ -153,13 +154,13 @@ Le script rejoue toute l'installation et peut être relancé sans risque : chaqu
 1. vérifie le matériel ;
 2. installe Homebrew, `llama.cpp`, `hf` et `uv`, et contrôle que llama.cpp gère `qwen4exp` et le MTP ;
 3. règle la limite GPU et le LaunchDaemon (`sudo`) ;
-4. télécharge les modèles, avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
+4. télécharge les modèles, dont le fichier de vision de Flash-Next (`mmproj-F16.gguf`), avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
 5. installe mlx-dspark et le lien `models/mlx-alias/qwen3.8-27b` ;
 6. crée le mot de passe s'il n'existe pas ;
 7. installe le LaunchAgent ;
 8. règle la veille avec `pmset` (`sudo`) ;
 9. autorise les serveurs dans le pare-feu s'il est actif (`sudo`) ;
-10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) ;
+10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) et, pour le profil `flash`, que la vision est active ;
 11. construit `webui/` (interface web avec la documentation clients) et redémarre le service pour la servir.
 
 Il demande confirmation avant chaque `sudo` et chaque gros téléchargement, sauf avec `--yes`. Installé dans un autre dossier que `/Users/amaury/DEV/SETUP-LLM`, il adapte les chemins absolus des scripts.
@@ -195,3 +196,18 @@ Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `v
 - **Command Line Tools** : l'éditeur de liens refuse le SDK par défaut, `MacOSX27.0.sdk` (`tapi error: malformed file`). Compilez avec `-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`, ou mettez à jour les Command Line Tools (`softwareupdate --list`).
 - **Python 3.15 Homebrew (OpenSSL 4.0)** : des délais dépassés pendant l'établissement des connexions chiffrées ont été constatés avec `pip` et `hf`. C'est pourquoi mlx-dspark tourne sur un Python 3.12 géré par `uv`.
 - **Mot de passe en clair dans la liste des processus pour le profil `27b-dspark`** : mlx-dspark n'accepte la clé qu'en argument, elle est donc visible avec `ps` pour les autres comptes de ce Mac.
+
+## 12. Historique des modifications
+
+Chaque modification faite après l'installation, avec l'endroit où elle est rejouée par `install.sh`.
+
+| Date | Modification | Fichiers | Rejoué par `install.sh` |
+|---|---|---|---|
+| 20/10/2026 | Installation initiale, étapes 0 à 12 de `SETUP_LLM_SERVER.md` | tout le dépôt | étapes 0 à 10 |
+| 21/10/2026 | **Niveaux de réflexion** Medium (2 048), High (8 192) et Max (24 576, par défaut) dans les guides clients, avec une commande qui crée le fichier de configuration (OpenCode, Qwen Code, Hermes) | `CLIENTS.md`, `clients/*.md` | — (côté clients) |
+| 21/10/2026 | **Plafond de réflexion du serveur** relevé de 4 096 à 24 576 tokens : le niveau Max de l'interface web et les clients qui n'envoient rien (Aider, Codex) en profitent | `models.conf` | oui, via `models.conf` |
+| 21/10/2026 | **Documentation dans l'interface web** : entrée Documentation sous Settings, ou `http://<IP_DU_MAC>:8080/?docs` | `tools/build-webui.py`, `webui-src/`, `start.sh` (`--path`), `.gitignore` | étape 11 |
+| 24/10/2026 | **Qwen Code** : variable `QWEN_USAGE_STATISTICS_ENABLED=false` (Linux, macOS, WSL2, PowerShell, `cmd`) pour couper les statistiques d'usage | `clients/QWEN-CODE.md` | — (côté clients) |
+| 24/10/2026 | **Vision pour Flash-Next** : `mmproj-F16.gguf` (862 Mio, `unsloth/Qwen3.8-Flash-Next-GGUF`) et `--mmproj` dans le profil `flash`. Corrige `image input is not supported - hint: … you may need to provide the mmproj` | `models.conf`, `install.sh`, `CLIENTS.md` (Cline : Image Support) | étape 3 (téléchargement), étape 10 (contrôle) |
+
+**Après une modification d'un guide `.md`**, régénérez la doc de l'interface web : `uv run --no-project --with markdown python tools/build-webui.py`.

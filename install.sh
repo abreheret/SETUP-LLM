@@ -1,7 +1,10 @@
 #!/bin/zsh
 # Installation complete du serveur LLM local (MacBook Pro M5 Max, 128 Go) depuis zero.
 # Rejoue toutes les etapes de SETUP_LLM_SERVER.md telles qu'elles ont ete validees le 20/10/2026
-# (voir README.md pour les choix et les mesures).
+# (voir README.md pour les choix et les mesures), avec les ajouts suivants (README.md, section 12) :
+#   21/10/2026 : plafond de reflexion 24576 tokens (models.conf) ; interface web avec l'entree
+#                Documentation (etape 11, tools/build-webui.py, servie avec --path par start.sh)
+#   24/10/2026 : vision pour Flash-Next (mmproj-F16.gguf, etape 3, --mmproj dans models.conf)
 #
 # Usage : ./install.sh [--no-dspark] [--no-models] [--no-sudo] [--yes]
 #   --no-dspark : ne pas installer mlx-dspark ni le modele MLX (profil 27b-dspark)
@@ -192,9 +195,12 @@ if (( ! WITH_MODELS )); then
 else
   SIZE_FLASH=$(total_size_gb $FLASH_REPO $FLASH_FILES)
   SIZE_DENSE=$(total_size_gb $DENSE_REPO $DENSE_FILES)
-  echo "  Flash-Next UD-Q4_K_XL + tete MTP : $SIZE_FLASH Go ; 27B Q8_0 : $SIZE_DENSE Go"
+  echo "  Flash-Next UD-Q4_K_XL + tete MTP : $SIZE_FLASH Go (+ 0,9 Go de vision) ; 27B Q8_0 : $SIZE_DENSE Go"
   if confirm "Telecharger (ou verifier) ces modeles ?"; then
     hf_fetch $FLASH_REPO $MODELS/qwen3.8-flash-next $FLASH_FILES
+    # Projecteur de vision (0,9 Go) : sans lui, toute image envoyee renvoie
+    # "image input is not supported - hint: ... you may need to provide the mmproj".
+    hf_fetch $FLASH_REPO $MODELS/qwen3.8-flash-next/mmproj mmproj-F16.gguf
     hf_fetch $DENSE_REPO $MODELS/qwen3.8-27b $DENSE_FILES
   else
     warn "modeles GGUF non telecharges"
@@ -311,6 +317,11 @@ CODE_OK=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(<$P
 CODE_KO=$(curl -s -o /dev/null -w '%{http_code}' http://$IP:8080/v1/models)
 [[ $CODE_OK == 200 ]] && ok "API via $IP : 200 avec mot de passe" || warn "API via $IP : $CODE_OK avec mot de passe (voir $LOG_DIR/llm-server.log)"
 [[ $CODE_KO == 401 ]] && ok "API sans mot de passe : 401" || warn "API sans mot de passe : $CODE_KO (attendu 401)"
+if [[ $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf) == flash ]]; then
+  curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" http://127.0.0.1:8080/props | has '"vision":true' &&
+    ok "vision active (images acceptees)" ||
+    warn "vision inactive : verifier $MODELS/qwen3.8-flash-next/mmproj/mmproj-F16.gguf et --mmproj dans models.conf"
+fi
 
 # ---------------------------------------------------------------------------------------------
 step "Etape 11 : documentation clients dans l'interface web"

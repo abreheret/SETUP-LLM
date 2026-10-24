@@ -26,19 +26,39 @@ qwen --version
 
 Qwen Code peut se configurer par variables d'environnement (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`) ou par un fichier `settings.json`. **La méthode recommandée est le fichier**, qui permet de déclarer les deux modèles et de passer de l'un à l'autre avec `/model`. Les variables d'environnement sont l'alternative, en fin de section.
 
-### 3.1 Le mot de passe
+### 3.1 Le mot de passe et les statistiques d'usage
 
-Il ne va jamais dans le fichier : `settings.json` donne seulement le **nom** de la variable qui le contient.
+Le mot de passe ne va jamais dans le fichier : `settings.json` donne seulement le **nom** de la variable qui le contient.
 
-**Linux / macOS / WSL2** (remplacez `~/.bashrc` par `~/.zshrc` sous zsh) :
+Ajoutez aussi `QWEN_USAGE_STATISTICS_ENABLED=false`. Elle coupe l'envoi de statistiques d'usage à l'équipe Qwen. Elle passe avant le réglage `privacy` de `settings.json`, et s'applique donc même si un `settings.json` de projet le réactive.
+
+Choisissez le bloc de votre système.
+
+**Linux et WSL2** (bash, fichier `~/.bashrc`) :
 ```bash
 echo 'export MAC_LLM_PASSWORD="<MOT_DE_PASSE>"' >> ~/.bashrc
-source ~/.bashrc
+echo 'export QWEN_USAGE_STATISTICS_ENABLED=false' >> ~/.bashrc && source ~/.bashrc
 ```
-**Windows PowerShell** (rouvrez le terminal ensuite) :
+
+**macOS** (zsh, le shell par défaut, fichier `~/.zshrc`) :
+```bash
+echo 'export MAC_LLM_PASSWORD="<MOT_DE_PASSE>"' >> ~/.zshrc
+echo 'export QWEN_USAGE_STATISTICS_ENABLED=false' >> ~/.zshrc && source ~/.zshrc
+```
+
+**Windows, PowerShell** (fermez et rouvrez ensuite le terminal) :
 ```powershell
 [Environment]::SetEnvironmentVariable("MAC_LLM_PASSWORD", "<MOT_DE_PASSE>", "User")
+[Environment]::SetEnvironmentVariable("QWEN_USAGE_STATISTICS_ENABLED", "false", "User")
 ```
+
+**Windows, invite de commandes `cmd`** (fermez et rouvrez ensuite le terminal) :
+```bat
+setx MAC_LLM_PASSWORD "<MOT_DE_PASSE>"
+setx QWEN_USAGE_STATISTICS_ENABLED false
+```
+
+Vérifiez dans un nouveau terminal : `echo $QWEN_USAGE_STATISTICS_ENABLED` (Linux, macOS, WSL2), `echo $env:QWEN_USAGE_STATISTICS_ENABLED` (PowerShell) ou `echo %QWEN_USAGE_STATISTICS_ENABLED%` (`cmd`) doit afficher `false`.
 
 ### 3.2 Le fichier `settings.json`
 
@@ -215,7 +235,7 @@ qwen "Réponds juste : prêt"
 - **Contexte : 262 144 tokens** (`contextWindowSize`). Le serveur garantit cette taille par utilisateur, même quand deux personnes l'utilisent en même temps.
 - **Température** : `1.0` et `top_p 0.95`, les valeurs recommandées par l'équipe Qwen, déjà dans le fichier ci-dessus.
 - **`max_tokens` : 32 768**, au-dessus du plafond de réflexion du niveau Max (24 576 tokens), pour laisser la place à la réponse.
-- **Fonctions cloud désactivées** : statistiques d'usage et télémétrie (`privacy`, `telemetry`), aucun compte cloud.
+- **Fonctions cloud désactivées** : statistiques d'usage (`QWEN_USAGE_STATISTICS_ENABLED=false` et `privacy`), télémétrie (`telemetry`), aucun compte cloud.
 
 ## 7. Dépannage
 
