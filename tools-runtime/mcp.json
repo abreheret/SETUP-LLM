@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "web": {
+      "command": "/opt/homebrew/bin/docker",
+      "args": ["exec", "-i", "setup-llm-web", "python", "/app/server.py"]
+    }
+  }
+}

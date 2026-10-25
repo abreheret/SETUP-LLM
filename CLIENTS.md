@@ -133,6 +133,7 @@ Ouvrez **`http://192.168.1.92:8080`** dans un navigateur. C'est l'interface de c
   - L'entrée **Fichiers** du menu, sous Documentation, liste tous les fichiers produits, avec un bouton de téléchargement pour chacun.
   - Ouvrez un **nouveau chat** si le modèle répond qu'il ne peut pas créer de fichier : les outils sont chargés à l'ouverture de la conversation.
   - Ces fichiers sont visibles par tous les utilisateurs du serveur : n'y mettez rien de confidentiel.
+- **Le modèle peut chercher sur Internet** pour l'actualité ou une information récente : il lance une recherche, lit les pages utiles et cite ses sources. Demandez-le simplement, par exemple « quelles sont les actualités du jour ? ». Il ne peut pas télécharger de logiciel (`pip install`…).
 
 ## 3. Agents de code en terminal
 

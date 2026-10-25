@@ -37,10 +37,10 @@ if [[ $ENGINE == llama ]]; then
   # (tools-runtime/, Colima) : seulement s'il tourne, sinon l'interface reste sans outils.
   TOOLS_ARGS=()
   export PATH=/opt/homebrew/bin:$PATH
-  # Au login, Colima (brew services) met environ 20 s a relancer le conteneur : attente jusqu'a 2 min.
+  # Au login, Colima (brew services) met environ 20 s a relancer les conteneurs : attente jusqu'a 2 min.
   if command -v colima >/dev/null; then
     for i in {1..60}; do
-      [[ $(docker inspect -f '{{.State.Running}}' $TOOLS_CONTAINER 2>/dev/null) == true ]] && break
+      [[ $(docker inspect -f '{{.State.Running}}' $TOOLS_CONTAINER $WEB_CONTAINER 2>/dev/null) == $'true\ntrue' ]] && break
       sleep 2
     done
   fi
@@ -48,6 +48,12 @@ if [[ $ENGINE == llama ]]; then
     # ui-config.json : message systeme par defaut (fichiers dans /work, chemin cite pour le bouton Telecharger).
     TOOLS_ARGS=(--tools all --tools-runtime docker-container:$TOOLS_CONTAINER
       --ui-config-file $ROOT/tools-runtime/ui-config.json)
+    # Recherche et lecture web (serveur MCP dans setup-llm-web, avec SearXNG) : seulement s'il tourne.
+    if [[ $(docker inspect -f '{{.State.Running}}' $WEB_CONTAINER 2>/dev/null) == true ]]; then
+      TOOLS_ARGS+=(--mcp-servers-config $ROOT/tools-runtime/mcp.json)
+    else
+      echo "Conteneur $WEB_CONTAINER arrete : interface web sans recherche web"
+    fi
   else
     echo "Conteneur $TOOLS_CONTAINER arrete : interface web sans outils"
   fi

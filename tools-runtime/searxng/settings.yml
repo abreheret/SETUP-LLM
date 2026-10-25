@@ -1,0 +1,13 @@
+# Reglages ajoutes a ceux par defaut de SearXNG : sortie JSON pour web/server.py (outil web_search), pas de limiteur
+# (seul le conteneur setup-llm-web l'interroge, sur le reseau Docker llm-web, sans port publie).
+use_default_settings: true
+general:
+  instance_name: setup-llm
+search:
+  formats: [html, json]
+  safe_search: 0
+  default_lang: auto
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false

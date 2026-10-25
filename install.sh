@@ -6,7 +6,8 @@
 #                Documentation (etape 11, tools/build-webui.py, servie avec --path par start.sh)
 #   24/10/2026 : vision pour Flash-Next (mmproj-F16.gguf, etape 3, --mmproj dans models.conf)
 #   25/10/2026 : creation de fichiers depuis l'interface web, outils executes dans le conteneur
-#                setup-llm-tools sous Colima (etape 6 bis, tools-runtime/setup.sh, --tools dans start.sh)
+#                setup-llm-tools sous Colima (etape 6 bis, tools-runtime/setup.sh, --tools dans start.sh) ;
+#                recherche web (SearXNG et serveur MCP dans setup-llm-web, --mcp-servers-config)
 #
 # Usage : ./install.sh [--no-dspark] [--no-models] [--no-tools] [--no-sudo] [--yes]
 #   --no-dspark : ne pas installer mlx-dspark ni le modele MLX (profil 27b-dspark)
@@ -270,7 +271,7 @@ step "Etape 6 bis : outils de l'interface web (Colima, conteneur setup-llm-tools
 if (( ! WITH_TOOLS )); then
   warn "etape sautee (--no-tools) : l'interface web ne pourra pas creer de fichiers"
 elif $ROOT/tools-runtime/setup.sh; then
-  ok "Colima demarre au login (brew services), fichiers produits dans ~/LLM-fichiers"
+  ok "Colima demarre au login (brew services), fichiers produits dans ~/LLM-fichiers, recherche web prete"
 else
   warn "tools-runtime/setup.sh a echoue : l'interface web reste sans outils"
 fi
@@ -339,6 +340,10 @@ if (( WITH_TOOLS )); then
     http://127.0.0.1:8080/tools -d '{"tool":"exec_shell_command","params":{"command":"test -d /work && test ! -e /Users && echo isole"}}')
   [[ $OUT == *isole* ]] && ok "outils de l'interface web actifs, dans le conteneur isole" ||
     warn "outils de l'interface web inactifs (voir $LOG_DIR/llm-server.log et docker ps)"
+  OUT=$(curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" -H 'Content-Type: application/json' \
+    http://127.0.0.1:8080/tools -d '{"tool":"web_search","params":{"query":"wikipedia","max_results":1}}')
+  [[ $OUT == *http* ]] && ok "recherche web active (web_search)" ||
+    warn "recherche web inactive (voir docker logs setup-llm-searxng et $LOG_DIR/llm-server.log)"
 fi
 if [[ $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf) == flash ]]; then
   curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" http://127.0.0.1:8080/props | has '"vision":true' &&

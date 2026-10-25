@@ -13,7 +13,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
 | Outils Homebrew | `llama.cpp`, `hf` 2.2.0 (client Hugging Face), `uv` 0.13.2 |
 | Service | LaunchAgent `fr.local.llm-server` : démarre à l'ouverture de session et redémarre après un plantage |
 | Réglages système | limite GPU à 110 Go (LaunchDaemon `fr.local.iogpu-wired-limit`), pas de veille sur secteur (`pmset`) |
-| Outils de l'interface web | **Colima** 0.10.3 (VM Linux, démarrée au login par `brew services`) et client `docker` 29.9.2 ; conteneur `setup-llm-tools` où le modèle exécute ses commandes ; fichiers produits dans `~/LLM-fichiers` |
+| Outils de l'interface web | **Colima** 0.10.3 (VM Linux, démarrée au login par `brew services`) et client `docker` 29.9.2 ; conteneur `setup-llm-tools` où le modèle exécute ses commandes ; fichiers produits dans `~/LLM-fichiers` ; recherche web (`setup-llm-web`, SearXNG `setup-llm-searxng`) |
 
 **Modèles** (dans `models/`, un seul chargé à la fois) :
 
@@ -71,6 +71,11 @@ Tous les paramètres sont dans **`models.conf`** :
   - **Sécurité** : toute personne qui a le mot de passe peut faire exécuter des commandes dans le conteneur, et lire ou effacer les fichiers de `~/LLM-fichiers`. Le Mac lui-même reste hors d'atteinte.
   - **Au démarrage du Mac** : Colima relance le conteneur en environ 20 s ; `start.sh` l'attend jusqu'à 2 min. Conteneur arrêté : llama-server démarre sans outils (message dans `logs/llm-server.log`).
   - **Désactiver** : `docker stop setup-llm-tools`, puis redémarrer le service. **Recréer** le conteneur (après une modification du `Dockerfile`) : `tools-runtime/setup.sh`.
+- **Recherche web depuis l'interface web** (ajoutée le 25 octobre 2026) : outils `web_search` (recherche) et `web_fetch_page` (texte principal d'une page, par tranches de 20 000 caractères), pour l'actualité et les informations récentes.
+  - **Comment** : serveur MCP maison (`tools-runtime/web/server.py`, sans SDK) dans le conteneur `setup-llm-web`, lancé par llama-server avec `docker exec -i` (`--mcp-servers-config tools-runtime/mcp.json`). Il interroge **SearXNG** (conteneur `setup-llm-searxng`, version figée, sans clé ni compte) et lit les pages avec trafilatura.
+  - **Isolation** : ces deux conteneurs ont Internet (réseau Docker `llm-web`) mais pas `~/LLM-fichiers`. Le shell du modèle (`setup-llm-tools`) reste sans réseau : une page piégée ne peut pas lui faire envoyer les fichiers produits. `web_fetch_page` refuse les adresses non publiques (LAN, `localhost`, Docker), redirections comprises.
+  - **Limites** : les pages chargées en JavaScript renvoient peu de texte ; les PDF ne sont pas lus. Un moteur peut limiter le débit de SearXNG : `docker logs setup-llm-searxng`.
+  - **Désactiver** : `docker stop setup-llm-web`, puis redémarrer le service (`start.sh` n'ajoute `--mcp-servers-config` que si le conteneur tourne).
 - **Guides pour les utilisateurs** :
   - `CLIENTS.md` : tous les clients (OpenCode, Qwen Code, Aider, Hermes, Codex, éditeurs, dépannage) ;
   - `clients/OPENCODE.md`, `clients/QWEN-CODE.md` et `clients/HERMES.md` : les guides pas à pas.
@@ -149,7 +154,7 @@ Paramètres communs aux profils llama.cpp (`CTX_ARGS` dans `models.conf`) : `-np
 | Pare-feu macOS | **non modifié** (désactivé au moment de l'installation) |
 | LaunchAgent `~/Library/LaunchAgents/fr.local.llm-server.plist` | `launchctl bootout gui/$(id -u)/fr.local.llm-server && rm ~/Library/LaunchAgents/fr.local.llm-server.plist` |
 | Paquets Homebrew `llama.cpp` (+ `ggml`, `libomp`), `hf`, `uv` | `brew uninstall llama.cpp hf uv && brew autoremove` |
-| Colima, `docker`, VM et conteneur `setup-llm-tools` (environ 2 Go sur disque) | `brew services stop colima && colima delete -f && brew uninstall colima docker && brew autoremove` ; fichiers produits : `rm -rf ~/LLM-fichiers` |
+| Colima, `docker`, VM, conteneurs `setup-llm-tools`, `setup-llm-web` et `setup-llm-searxng` (environ 2,5 Go sur disque) | `brew services stop colima && colima delete -f && brew uninstall colima docker && brew autoremove` ; fichiers produits : `rm -rf ~/LLM-fichiers` |
 | Jeton Hugging Face `~/.cache/huggingface/token` | `hf auth logout`, puis révoquez le jeton sur huggingface.co |
 | Modèles (environ 175 Go), venv, Python, journaux, mot de passe | `rm -rf models venv-dspark python logs password` dans ce dossier |
 
@@ -167,11 +172,11 @@ Le script rejoue toute l'installation et peut être relancé sans risque : chaqu
 3. règle la limite GPU et le LaunchDaemon (`sudo`) ;
 4. télécharge les modèles, dont le fichier de vision de Flash-Next (`mmproj-F16.gguf`), avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
 5. installe mlx-dspark et le lien `models/mlx-alias/qwen3.8-27b` ;
-6. crée le mot de passe s'il n'existe pas, puis installe Colima et le conteneur des outils de l'interface web (`tools-runtime/setup.sh`, sauf avec `--no-tools`) ;
+6. crée le mot de passe s'il n'existe pas, puis installe Colima et les conteneurs de l'interface web : outils (shell, fichiers) et recherche web avec SearXNG (`tools-runtime/setup.sh`, sauf avec `--no-tools`) ;
 7. installe le LaunchAgent ;
 8. règle la veille avec `pmset` (`sudo`) ;
 9. autorise les serveurs dans le pare-feu s'il est actif (`sudo`) ;
-10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) et, pour le profil `flash`, que la vision est active ;
+10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) et, pour le profil `flash`, que la vision est active ; contrôle aussi que les outils tournent dans le conteneur isolé et que `web_search` répond ;
 11. construit `webui/` (interface web avec la documentation clients) et redémarre le service pour la servir.
 
 Il demande confirmation avant chaque `sudo` et chaque gros téléchargement, sauf avec `--yes`. Installé dans un autre dossier que `/Users/amaury/DEV/SETUP-LLM`, il adapte les chemins absolus des scripts.
@@ -197,7 +202,7 @@ Il faut un jeton de type « Read », copié dans le presse-papiers.
 | `CLIENTS.md`, `clients/*.md` | guides de connexion pour les utilisateurs |
 | `tools/build-webui.py` | construit `webui/` : copie de l'interface web de llama-server, avec l'entrée Documentation et la doc clients en HTML |
 | `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrées Documentation et Fichiers, boutons Télécharger dans le chat), `docs.css` (style de la doc) |
-| `tools-runtime/` | outils de l'interface web : `Dockerfile` (image du conteneur), `setup.sh` (Colima, image, conteneur), `ui-config.json` (message système par défaut) |
+| `tools-runtime/` | outils de l'interface web : `Dockerfile` (image du conteneur du shell), `setup.sh` (Colima, images, conteneurs), `ui-config.json` (message système par défaut), `mcp.json` (serveur MCP de recherche web), `web/` (serveur MCP `server.py`), `searxng/` (image et réglages SearXNG) |
 
 Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `venv-dspark/`, `python/`, `webui/` (régénéré par `tools/build-webui.py`).
 
@@ -222,5 +227,6 @@ Chaque modification faite après l'installation, avec l'endroit où elle est rej
 | 24/10/2026 | **Qwen Code** : variable `QWEN_USAGE_STATISTICS_ENABLED=false` (Linux, macOS, WSL2, PowerShell, `cmd`) pour couper les statistiques d'usage | `clients/QWEN-CODE.md` | — (côté clients) |
 | 24/10/2026 | **Vision pour Flash-Next** : `mmproj-F16.gguf` (862 Mio, `unsloth/Qwen3.8-Flash-Next-GGUF`) et `--mmproj` dans le profil `flash`. Corrige `image input is not supported - hint: … you may need to provide the mmproj` | `models.conf`, `install.sh`, `CLIENTS.md` (Cline : Image Support) | étape 3 (téléchargement), étape 10 (contrôle) |
 | 25/10/2026 | **Création de fichiers depuis l'interface web** : outils de llama-server (`--tools all`) exécutés dans un conteneur isolé (Colima, `setup-llm-tools`, sans réseau, seul `~/LLM-fichiers` partagé) ; bouton **Télécharger** dans les réponses et entrée **Fichiers** du menu ; message système par défaut. Répond à « Relance llama-server avec l'argument --agent », que le modèle proposait sans outils | `tools-runtime/`, `start.sh`, `models.conf` (`TOOLS_CONTAINER`), `webui-src/inject.js`, `webui-src/docs.css`, `install.sh`, `CLIENTS.md` | étape 6 bis (Colima et conteneur), étape 11 (interface web) |
+| 25/10/2026 | **Recherche web depuis l'interface web** : outils `web_search` et `web_fetch_page` (serveur MCP `tools-runtime/web/server.py` dans `setup-llm-web`, SearXNG dans `setup-llm-searxng`, Internet sans accès à `~/LLM-fichiers` ni au LAN). Le shell reste hors ligne | `tools-runtime/` (`web/`, `searxng/`, `mcp.json`, `setup.sh`, `ui-config.json`), `start.sh`, `models.conf` (`WEB_CONTAINER`), `install.sh`, `CLIENTS.md` | étape 6 bis, étape 10 (contrôle) |
 
 **Après une modification d'un guide `.md`**, régénérez la doc de l'interface web : `uv run --no-project --with markdown python tools/build-webui.py`.
