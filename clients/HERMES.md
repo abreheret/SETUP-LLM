@@ -11,14 +11,14 @@ Hermes Agent est l'agent open source de Nous Research ([NousResearch/hermes-agen
 
 Ce guide vous mène de zéro à une session qui fonctionne avec le modèle du Mac, **sans qu'aucune donnée ne parte vers un service cloud**.
 
-> Testé le 20 octobre 2026 avec Hermes Agent **0.22.2**, sur macOS, avec le script officiel et la configuration manuelle de la section 3.2 : lecture d'un fichier, modification, commande shell. Pendant le test, Hermes ne s'est connecté qu'au Mac (`192.168.1.92`). L'assistant `hermes model`, l'installation Windows, l'application Desktop et le backend SSH n'ont pas été testés. Amaury l'utilise surtout sous **WSL2**. Commande de création de `config.yaml` et niveaux de réflexion testés le 21 octobre 2026 (bash et zsh) ; `/reasoning` non testé.
+> Testé le 20 octobre 2026 avec Hermes Agent **0.22.2**, sur macOS, avec le script officiel et la configuration manuelle de la section 3.2 : lecture d'un fichier, modification, commande shell. Pendant le test, Hermes ne s'est connecté qu'au Mac (`192.168.1.92`). L'assistant `hermes model`, l'installation Windows, l'application Desktop et le backend SSH n'ont pas été testés. Usage principal visé : **WSL2**. Commande de création de `config.yaml` et niveaux de réflexion testés le 21 octobre 2026 (bash et zsh) ; `/reasoning` non testé.
 
 ## 1. Prérequis
 
 - **Système** : Linux, **WSL2** (recommandé sous Windows), macOS, ou Windows natif.
 - **`git` et `curl`**. Le script d'installation se charge lui-même de Python et du reste.
 - **Être sur le même réseau que le Mac**, et connaître le mot de passe partagé.
-- **Sous WSL2, utilisez l'IP du Mac** et non `MacBook-Pro-de-Amaury.local` : WSL2 ne résout pas toujours les noms `.local`.
+- **Sous WSL2, utilisez l'IP du Mac** et non son nom Bonjour (`<NOM_DU_MAC>.local`) : WSL2 ne résout pas toujours les noms `.local`.
 
 ## 2. Installation
 
@@ -247,17 +247,17 @@ Hermes peut exécuter ses commandes ailleurs que là où il tourne. Le réglage 
 - **`docker`** : dans un conteneur, pour isoler.
 - **`ssh`** : sur une autre machine, via SSH.
 
-**Exemple (non testé) : Hermes tourne sous WSL2, mais exécute ses commandes sur un serveur Linux `build01`.**
+**Exemple (non testé) : Hermes tourne sous WSL2, mais exécute ses commandes sur un serveur Linux `serveur.local`.**
 
 1. Vérifiez d'abord que la connexion SSH par clé fonctionne depuis WSL2 :
    ```bash
-   ssh -i ~/.ssh/id_ed25519 amaury@build01.local 'uname -a'
+   ssh -i ~/.ssh/id_ed25519 user@serveur.local 'uname -a'
    ```
 2. Ajoutez dans `~/.hermes/.env` :
    ```bash
-   TERMINAL_SSH_HOST=build01.local
-   TERMINAL_SSH_USER=amaury
-   TERMINAL_SSH_KEY=/home/amaury/.ssh/id_ed25519
+   TERMINAL_SSH_HOST=serveur.local
+   TERMINAL_SSH_USER=user
+   TERMINAL_SSH_KEY=/home/user/.ssh/id_ed25519
    # TERMINAL_SSH_PORT=22
    ```
 3. Changez le backend :
@@ -265,7 +265,7 @@ Hermes peut exécuter ses commandes ailleurs que là où il tourne. Le réglage 
    hermes config set terminal.backend ssh
    ```
 
-Le modèle reste celui du Mac. Seules les commandes partent sur `build01`.
+Le modèle reste celui du Mac. Seules les commandes partent sur `serveur.local`.
 
 ## 6. Réglages recommandés pour ce serveur
 

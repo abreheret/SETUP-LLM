@@ -4,6 +4,13 @@ Ce Mac (M5 Max, 128 Go de mémoire unifiée, macOS 26.6) fait tourner en continu
 
 Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. Pour tout réinstaller : `./install.sh` (section 9).
 
+> **Utiliser ce dépôt sur votre machine.** Ce dépôt documente une installation réelle : les mesures, les IP (`192.168.1.92`) et les chemins (`/Users/amaury/DEV/SETUP-LLM`) sont ceux de ce Mac. Pour l'adapter :
+> - **Mac Apple Silicon avec beaucoup de mémoire** : les profils de `models.conf` visent 128 Go. Avec moins, prenez le profil `27b` ou une quantization plus petite, et baissez le contexte (`CTX_ARGS`) et la limite GPU (`GPU_WIRED_LIMIT_MB` dans `install.sh`).
+> - **Dossier** : clonez où vous voulez, puis lancez `./install.sh`. Il remplace `/Users/amaury/DEV/SETUP-LLM` par votre dossier dans les scripts (`start.sh`, `switch.sh`, `status.sh`, `set-password.sh`, `models.conf`, `tools/*.py`).
+> - **Mot de passe** : `install.sh` en génère un (fichier `password`, jamais versionné).
+> - **Guides clients** : remplacez `192.168.1.92` par l'IP de votre Mac (`ipconfig getifaddr en0`) avant de les distribuer.
+> - **Licence** : MIT (fichier `LICENSE`).
+
 ## 1. Ce qui est installé
 
 | Élément | Détail |
@@ -88,7 +95,7 @@ Tous les paramètres sont dans **`models.conf`** :
 
 - **L'IP du Mac change selon le réseau** (maison, travail). `./status.sh` affiche l'IP de `en0`/`en1` et l'URL complète. À la maison, au moment de l'installation : `192.168.1.92`.
 - **Réservation DHCP conseillée à la maison.** Dans l'interface de la box, réservez une IP fixe pour l'adresse MAC du Mac (`ifconfig en0 | grep ether`). Les clients n'auront plus à changer leur configuration.
-- **Nom Bonjour** : `MacBook-Pro-de-Amaury.local`. **WSL2 ne résout pas toujours les noms `.local`** : pour Hermes sous WSL2, et en cas de doute, utilisez l'IP.
+- **Nom Bonjour** : `<NOM_DU_MAC>.local` (donné par `scutil --get LocalHostName`). **WSL2 ne résout pas toujours les noms `.local`** : pour Hermes sous WSL2, et en cas de doute, utilisez l'IP.
 - **Pare-feu macOS** : désactivé au moment de l'installation, donc rien à autoriser. S'il est activé un jour, autorisez le vrai binaire de `llama-server` (`realpath $(which llama-server)`) et le Python de `venv-dspark` avec `socketfilterfw --add` puis `--unblockapp`. `install.sh` le fait. Ne désactivez pas le pare-feu pour contourner un blocage.
 - **Le trafic n'est pas chiffré** (HTTP). N'envoyez pas de données sensibles, en particulier sur le réseau du travail.
 
@@ -192,6 +199,7 @@ Il faut un jeton de type « Read », copié dans le presse-papiers.
 | Fichier | Rôle |
 |---|---|
 | `SETUP_LLM_SERVER.md` | le plan d'installation d'origine |
+| `LICENSE` | licence MIT |
 | `install.sh` | installation complète et idempotente |
 | `models.conf` | profils de modèles et paramètres serveur |
 | `start.sh`, `switch.sh`, `status.sh`, `set-password.sh` | exploitation au quotidien |
@@ -228,5 +236,6 @@ Chaque modification faite après l'installation, avec l'endroit où elle est rej
 | 24/10/2026 | **Vision pour Flash-Next** : `mmproj-F16.gguf` (862 Mio, `unsloth/Qwen3.8-Flash-Next-GGUF`) et `--mmproj` dans le profil `flash`. Corrige `image input is not supported - hint: … you may need to provide the mmproj` | `models.conf`, `install.sh`, `CLIENTS.md` (Cline : Image Support) | étape 3 (téléchargement), étape 10 (contrôle) |
 | 25/10/2026 | **Création de fichiers depuis l'interface web** : outils de llama-server (`--tools all`) exécutés dans un conteneur isolé (Colima, `setup-llm-tools`, sans réseau, seul `~/LLM-fichiers` partagé) ; bouton **Télécharger** dans les réponses et entrée **Fichiers** du menu ; message système par défaut. Répond à « Relance llama-server avec l'argument --agent », que le modèle proposait sans outils | `tools-runtime/`, `start.sh`, `models.conf` (`TOOLS_CONTAINER`), `webui-src/inject.js`, `webui-src/docs.css`, `install.sh`, `CLIENTS.md` | étape 6 bis (Colima et conteneur), étape 11 (interface web) |
 | 25/10/2026 | **Recherche web depuis l'interface web** : outils `web_search` et `web_fetch_page` (serveur MCP `tools-runtime/web/server.py` dans `setup-llm-web`, SearXNG dans `setup-llm-searxng`, Internet sans accès à `~/LLM-fichiers` ni au LAN). Le shell reste hors ligne | `tools-runtime/` (`web/`, `searxng/`, `mcp.json`, `setup.sh`, `ui-config.json`), `start.sh`, `models.conf` (`WEB_CONTAINER`), `install.sh`, `CLIENTS.md` | étape 6 bis, étape 10 (contrôle) |
+| 25/10/2026 | **Préparation à la publication** : aucun secret dans les fichiers suivis ni dans l'historique (mot de passe, jeton Hugging Face, clés) ; prénom, nom du Mac et exemple SSH anonymisés ; `SETUP_M5.md` (notes personnelles) retiré du dépôt ; licence MIT ; encadré « Utiliser ce dépôt sur votre machine » | `README.md`, `CLIENTS.md`, `clients/HERMES.md`, `LICENSE`, `.gitignore` | — (documentation) |
 
 **Après une modification d'un guide `.md`**, régénérez la doc de l'interface web : `uv run --no-project --with markdown python tools/build-webui.py`.

@@ -1,6 +1,6 @@
 # Se connecter au serveur LLM du Mac M5 Max
 
-Ce guide explique comment utiliser, depuis votre PC, les modèles qui tournent sur le Mac M5 Max d'Amaury.
+Ce guide explique comment utiliser, depuis votre PC, les modèles qui tournent sur le Mac M5 Max du réseau local (le « serveur »).
 Vous n'avez rien à installer côté serveur : il suffit de pointer votre outil vers le Mac.
 
 ## 1. Les 3 infos à connaître
@@ -14,8 +14,8 @@ Valables pour tous les clients :
 | Nom du modèle | `qwen3.8-flash-next` (modèle principal) ou `qwen3.8-27b` (secours) |
 
 - **Un seul modèle est chargé à la fois.** `GET /v1/models` indique lequel est disponible en ce moment.
-- **L'IP change selon le réseau** (maison, bureau). Si elle a changé, demandez la nouvelle à Amaury : elle est affichée par `status.sh` sur le Mac.
-- **Le nom `MacBook-Pro-de-Amaury.local`** peut marcher sur certains réseaux, mais pas sous WSL2. **Utilisez l'IP.**
+- **L'IP change selon le réseau** (maison, bureau). Si elle a changé, demandez la nouvelle à l'administrateur du Mac : elle est affichée par `status.sh` sur le Mac.
+- **Le nom Bonjour du Mac (`<NOM_DU_MAC>.local`)** peut marcher sur certains réseaux, mais pas sous WSL2. **Utilisez l'IP.**
 
 ### Définir la variable `MAC_LLM_PASSWORD`
 
@@ -293,7 +293,7 @@ models:
 | Symptôme | Cause probable | Solution |
 |---|---|---|
 | `401` / « Invalid API Key » / « access denied » | mauvais mot de passe, ou variable `MAC_LLM_PASSWORD` absente de ce terminal | `echo $MAC_LLM_PASSWORD` (bash) ou `echo $env:MAC_LLM_PASSWORD` (PowerShell) ; rouvrez le terminal après un `SetEnvironmentVariable` |
-| Délai dépassé (timeout), « connection refused » | mauvaise IP, Mac en veille ou éteint, ou pas sur le même réseau | testez avec `curl` (section 1), puis demandez l'IP actuelle à Amaury |
+| Délai dépassé (timeout), « connection refused » | mauvaise IP, Mac en veille ou éteint, ou pas sur le même réseau | testez avec `curl` (section 1), puis demandez l'IP actuelle à l'administrateur du Mac |
 | Réponses lentes | un autre utilisateur est en cours : le serveur traite **2 requêtes à la fois au maximum** ; un très long prompt (plus de 100 000 tokens) prend plusieurs minutes à lire | patientez ; évitez d'envoyer des dépôts entiers d'un coup |
 | Le modèle « réfléchit » longtemps | niveau Max : jusqu'à 24 576 tokens de réflexion (environ 8 minutes) | normal pour une question difficile ; pour une question simple, passez en Medium (section 1, « Niveau de réflexion ») |
 | Erreurs d'appel d'outils (tool calling), JSON brut affiché | client configuré en mode « Ollama » au lieu d'« OpenAI compatible » | choisissez le fournisseur **OpenAI compatible**, avec la base URL qui finit par `/v1` |

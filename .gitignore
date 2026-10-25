@@ -8,3 +8,5 @@ python/
 __pycache__/
 webui/
 webui.tmp/
+# Notes personnelles de configuration du Mac (hors sujet pour ce depot).
+SETUP_M5.md
