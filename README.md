@@ -13,6 +13,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
 | Outils Homebrew | `llama.cpp`, `hf` 2.2.0 (client Hugging Face), `uv` 0.13.2 |
 | Service | LaunchAgent `fr.local.llm-server` : démarre à l'ouverture de session et redémarre après un plantage |
 | Réglages système | limite GPU à 110 Go (LaunchDaemon `fr.local.iogpu-wired-limit`), pas de veille sur secteur (`pmset`) |
+| Outils de l'interface web | **Colima** 0.10.3 (VM Linux, démarrée au login par `brew services`) et client `docker` 29.9.2 ; conteneur `setup-llm-tools` où le modèle exécute ses commandes ; fichiers produits dans `~/LLM-fichiers` |
 
 **Modèles** (dans `models/`, un seul chargé à la fois) :
 
@@ -58,9 +59,18 @@ Tous les paramètres sont dans **`models.conf`** :
 - **Interface web** : `http://<IP_DU_MAC>:8080`. Elle demande le mot de passe au premier accès.
 - **Documentation dans l'interface web** : entrée **Documentation** sous Settings, ou directement `http://<IP_DU_MAC>:8080/?docs`. Elle reprend `CLIENTS.md` et les guides `clients/*.md`, et reste lisible sans mot de passe.
   - **D'où vient la page** : llama-server sert `webui/` (`--path`), une copie de son interface intégrée à laquelle `tools/build-webui.py` ajoute l'entrée de menu et la doc. La doc est intégrée à `index.html` : llama-server ne sert sans mot de passe que les fichiers de son interface intégrée, un fichier ajouté (`docs/…`) demanderait la clé.
-  - **Navigateurs déjà venus** : l'interface est mise en cache par un service worker. Au premier passage après une modification, elle affiche « Update available » : cliquez sur **Reload**.
+  - **Navigateurs déjà venus** : l'interface est mise en cache. Après une modification, rechargez avec **Cmd+Shift+R** (Ctrl+Shift+R sous Windows et Linux). Sur `localhost`, un service worker affiche « Update available » : cliquez sur **Reload**.
   - **Après une modification des fichiers `.md`** : relancez `uv run --no-project --with markdown python tools/build-webui.py`. Pas besoin de redémarrer le service.
   - **Après une mise à jour de llama.cpp** : `start.sh` détecte que la copie vient d'une autre version et sert l'interface intégrée, sans doc. Relancez le même script, puis `launchctl kickstart -k gui/$(id -u)/fr.local.llm-server`.
+- **Création de fichiers depuis l'interface web** (ajoutée le 25 octobre 2026) : le modèle dispose d'outils (shell, lecture et écriture de fichiers) et produit des `.docx`, `.xlsx`, `.pptx`, `.pdf`… que l'utilisateur télécharge depuis la page.
+  - **Où s'exécutent les outils** : dans le conteneur Docker `setup-llm-tools` (`--tools all --tools-runtime docker-container:setup-llm-tools`, ajouté par `start.sh`), sous Colima. Image `tools-runtime/Dockerfile` : Python 3.12, python-docx, openpyxl, python-pptx, reportlab, pandoc.
+  - **Isolation** : pas de réseau, système en lecture seule, utilisateur sans privilèges, 1 Gio de mémoire. Le seul dossier partagé est `~/LLM-fichiers` du Mac, vu comme `/work`. Vérifié : le modèle ne voit ni `/Users` ni le fichier `password`.
+  - **Téléchargement** : bouton **Télécharger** à côté de chaque chemin `/work/…` cité en code dans une réponse, et entrée **Fichiers** du menu (`/?docs=files`). La page lit le fichier par `POST /tools` (`read_file`, réponse en base64) avec la clé déjà saisie dans l'interface : rien n'est servi sans mot de passe.
+  - **Message système par défaut** (`tools-runtime/ui-config.json`, `--ui-config-file`) : enregistrer les fichiers dans `/work` et citer leur chemin complet entre backticks. Un utilisateur qui a son propre message système dans Settings garde le sien.
+  - **Coût** : la génération n'est pas ralentie (le modèle reste sur le GPU) ; la VM prend 2 Gio de mémoire, et chaque appel d'outil environ 0,2 s.
+  - **Sécurité** : toute personne qui a le mot de passe peut faire exécuter des commandes dans le conteneur, et lire ou effacer les fichiers de `~/LLM-fichiers`. Le Mac lui-même reste hors d'atteinte.
+  - **Au démarrage du Mac** : Colima relance le conteneur en environ 20 s ; `start.sh` l'attend jusqu'à 2 min. Conteneur arrêté : llama-server démarre sans outils (message dans `logs/llm-server.log`).
+  - **Désactiver** : `docker stop setup-llm-tools`, puis redémarrer le service. **Recréer** le conteneur (après une modification du `Dockerfile`) : `tools-runtime/setup.sh`.
 - **Guides pour les utilisateurs** :
   - `CLIENTS.md` : tous les clients (OpenCode, Qwen Code, Aider, Hermes, Codex, éditeurs, dépannage) ;
   - `clients/OPENCODE.md`, `clients/QWEN-CODE.md` et `clients/HERMES.md` : les guides pas à pas.
@@ -139,6 +149,7 @@ Paramètres communs aux profils llama.cpp (`CTX_ARGS` dans `models.conf`) : `-np
 | Pare-feu macOS | **non modifié** (désactivé au moment de l'installation) |
 | LaunchAgent `~/Library/LaunchAgents/fr.local.llm-server.plist` | `launchctl bootout gui/$(id -u)/fr.local.llm-server && rm ~/Library/LaunchAgents/fr.local.llm-server.plist` |
 | Paquets Homebrew `llama.cpp` (+ `ggml`, `libomp`), `hf`, `uv` | `brew uninstall llama.cpp hf uv && brew autoremove` |
+| Colima, `docker`, VM et conteneur `setup-llm-tools` (environ 2 Go sur disque) | `brew services stop colima && colima delete -f && brew uninstall colima docker && brew autoremove` ; fichiers produits : `rm -rf ~/LLM-fichiers` |
 | Jeton Hugging Face `~/.cache/huggingface/token` | `hf auth logout`, puis révoquez le jeton sur huggingface.co |
 | Modèles (environ 175 Go), venv, Python, journaux, mot de passe | `rm -rf models venv-dspark python logs password` dans ce dossier |
 
@@ -147,7 +158,7 @@ Paramètres communs aux profils llama.cpp (`CTX_ARGS` dans `models.conf`) : `-np
 ```bash
 cd /Users/amaury/DEV/SETUP-LLM
 ./install.sh            # tout
-./install.sh --help     # options : --no-dspark, --no-models, --no-sudo, --yes
+./install.sh --help     # options : --no-dspark, --no-models, --no-tools, --no-sudo, --yes
 ```
 
 Le script rejoue toute l'installation et peut être relancé sans risque : chaque étape vérifie d'abord ce qui est déjà fait. Il :
@@ -156,7 +167,7 @@ Le script rejoue toute l'installation et peut être relancé sans risque : chaqu
 3. règle la limite GPU et le LaunchDaemon (`sudo`) ;
 4. télécharge les modèles, dont le fichier de vision de Flash-Next (`mmproj-F16.gguf`), avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
 5. installe mlx-dspark et le lien `models/mlx-alias/qwen3.8-27b` ;
-6. crée le mot de passe s'il n'existe pas ;
+6. crée le mot de passe s'il n'existe pas, puis installe Colima et le conteneur des outils de l'interface web (`tools-runtime/setup.sh`, sauf avec `--no-tools`) ;
 7. installe le LaunchAgent ;
 8. règle la veille avec `pmset` (`sudo`) ;
 9. autorise les serveurs dans le pare-feu s'il est actif (`sudo`) ;
@@ -185,7 +196,8 @@ Il faut un jeton de type « Read », copié dans le presse-papiers.
 | `tools/load.py` | test de charge avec 1 puis 2 utilisateurs et prompts longs : `python3 tools/load.py essai 60000` |
 | `CLIENTS.md`, `clients/*.md` | guides de connexion pour les utilisateurs |
 | `tools/build-webui.py` | construit `webui/` : copie de l'interface web de llama-server, avec l'entrée Documentation et la doc clients en HTML |
-| `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrée de menu et affichage de la doc), `docs.css` (style de la doc) |
+| `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrées Documentation et Fichiers, boutons Télécharger dans le chat), `docs.css` (style de la doc) |
+| `tools-runtime/` | outils de l'interface web : `Dockerfile` (image du conteneur), `setup.sh` (Colima, image, conteneur), `ui-config.json` (message système par défaut) |
 
 Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `venv-dspark/`, `python/`, `webui/` (régénéré par `tools/build-webui.py`).
 
@@ -209,5 +221,6 @@ Chaque modification faite après l'installation, avec l'endroit où elle est rej
 | 21/10/2026 | **Documentation dans l'interface web** : entrée Documentation sous Settings, ou `http://<IP_DU_MAC>:8080/?docs` | `tools/build-webui.py`, `webui-src/`, `start.sh` (`--path`), `.gitignore` | étape 11 |
 | 24/10/2026 | **Qwen Code** : variable `QWEN_USAGE_STATISTICS_ENABLED=false` (Linux, macOS, WSL2, PowerShell, `cmd`) pour couper les statistiques d'usage | `clients/QWEN-CODE.md` | — (côté clients) |
 | 24/10/2026 | **Vision pour Flash-Next** : `mmproj-F16.gguf` (862 Mio, `unsloth/Qwen3.8-Flash-Next-GGUF`) et `--mmproj` dans le profil `flash`. Corrige `image input is not supported - hint: … you may need to provide the mmproj` | `models.conf`, `install.sh`, `CLIENTS.md` (Cline : Image Support) | étape 3 (téléchargement), étape 10 (contrôle) |
+| 25/10/2026 | **Création de fichiers depuis l'interface web** : outils de llama-server (`--tools all`) exécutés dans un conteneur isolé (Colima, `setup-llm-tools`, sans réseau, seul `~/LLM-fichiers` partagé) ; bouton **Télécharger** dans les réponses et entrée **Fichiers** du menu ; message système par défaut. Répond à « Relance llama-server avec l'argument --agent », que le modèle proposait sans outils | `tools-runtime/`, `start.sh`, `models.conf` (`TOOLS_CONTAINER`), `webui-src/inject.js`, `webui-src/docs.css`, `install.sh`, `CLIENTS.md` | étape 6 bis (Colima et conteneur), étape 11 (interface web) |
 
 **Après une modification d'un guide `.md`**, régénérez la doc de l'interface web : `uv run --no-project --with markdown python tools/build-webui.py`.

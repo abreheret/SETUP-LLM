@@ -5,10 +5,13 @@
 #   21/10/2026 : plafond de reflexion 24576 tokens (models.conf) ; interface web avec l'entree
 #                Documentation (etape 11, tools/build-webui.py, servie avec --path par start.sh)
 #   24/10/2026 : vision pour Flash-Next (mmproj-F16.gguf, etape 3, --mmproj dans models.conf)
+#   25/10/2026 : creation de fichiers depuis l'interface web, outils executes dans le conteneur
+#                setup-llm-tools sous Colima (etape 6 bis, tools-runtime/setup.sh, --tools dans start.sh)
 #
-# Usage : ./install.sh [--no-dspark] [--no-models] [--no-sudo] [--yes]
+# Usage : ./install.sh [--no-dspark] [--no-models] [--no-tools] [--no-sudo] [--yes]
 #   --no-dspark : ne pas installer mlx-dspark ni le modele MLX (profil 27b-dspark)
 #   --no-models : ne rien telecharger (modeles deja presents ou copies a la main)
+#   --no-tools  : ne pas installer Colima ni le conteneur des outils (interface web sans outils)
 #   --no-sudo   : sauter les etapes systeme qui demandent sudo (limite GPU, veille, pare-feu)
 #   --yes       : repondre oui a toutes les confirmations (sudo et gros telechargements compris)
 #
@@ -42,14 +45,15 @@ DENSE_FILES=(Qwen3.8-27B-Q8_0.gguf)
 MLX_REPO=mlx-community/Qwen3.8-27B-8bit
 DFLASH_REPO=incoai/Qwen3.8-27B-DFlash2
 
-WITH_DSPARK=1 WITH_MODELS=1 WITH_SUDO=1 ASSUME_YES=0
+WITH_DSPARK=1 WITH_MODELS=1 WITH_TOOLS=1 WITH_SUDO=1 ASSUME_YES=0
 for arg in "$@"; do
   case $arg in
     --no-dspark) WITH_DSPARK=0 ;;
     --no-models) WITH_MODELS=0 ;;
+    --no-tools) WITH_TOOLS=0 ;;
     --no-sudo) WITH_SUDO=0 ;;
     --yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,12p' $0; exit 0 ;;
+    -h|--help) sed -n '2,16p' $0; exit 0 ;;
     *) echo "Option inconnue : $arg" >&2; exit 1 ;;
   esac
 done
@@ -260,6 +264,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
+step "Etape 6 bis : outils de l'interface web (Colima, conteneur setup-llm-tools)"
+# ---------------------------------------------------------------------------------------------
+# Avant le LaunchAgent : start.sh n'active les outils (--tools) que si le conteneur tourne.
+if (( ! WITH_TOOLS )); then
+  warn "etape sautee (--no-tools) : l'interface web ne pourra pas creer de fichiers"
+elif $ROOT/tools-runtime/setup.sh; then
+  ok "Colima demarre au login (brew services), fichiers produits dans ~/LLM-fichiers"
+else
+  warn "tools-runtime/setup.sh a echoue : l'interface web reste sans outils"
+fi
+
+# ---------------------------------------------------------------------------------------------
 step "Etape 7 : demarrage automatique (LaunchAgent $AGENT_LABEL)"
 # ---------------------------------------------------------------------------------------------
 PLIST=$HOME/Library/LaunchAgents/$AGENT_LABEL.plist
@@ -317,6 +333,13 @@ CODE_OK=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(<$P
 CODE_KO=$(curl -s -o /dev/null -w '%{http_code}' http://$IP:8080/v1/models)
 [[ $CODE_OK == 200 ]] && ok "API via $IP : 200 avec mot de passe" || warn "API via $IP : $CODE_OK avec mot de passe (voir $LOG_DIR/llm-server.log)"
 [[ $CODE_KO == 401 ]] && ok "API sans mot de passe : 401" || warn "API sans mot de passe : $CODE_KO (attendu 401)"
+if (( WITH_TOOLS )); then
+  # L'outil shell doit tourner dans le conteneur : /work existe, /Users n'existe pas.
+  OUT=$(curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" -H 'Content-Type: application/json' \
+    http://127.0.0.1:8080/tools -d '{"tool":"exec_shell_command","params":{"command":"test -d /work && test ! -e /Users && echo isole"}}')
+  [[ $OUT == *isole* ]] && ok "outils de l'interface web actifs, dans le conteneur isole" ||
+    warn "outils de l'interface web inactifs (voir $LOG_DIR/llm-server.log et docker ps)"
+fi
 if [[ $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf) == flash ]]; then
   curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" http://127.0.0.1:8080/props | has '"vision":true' &&
     ok "vision active (images acceptees)" ||

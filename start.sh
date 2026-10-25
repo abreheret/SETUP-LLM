@@ -33,9 +33,27 @@ if [[ $ENGINE == llama ]]; then
   elif [[ -d $ROOT/webui ]]; then
     echo "webui/ copiee depuis une autre version de llama-server : interface integree servie (relancer tools/build-webui.py)"
   fi
+  # Outils de l'interface web (shell, fichiers), executes dans le conteneur setup-llm-tools
+  # (tools-runtime/, Colima) : seulement s'il tourne, sinon l'interface reste sans outils.
+  TOOLS_ARGS=()
+  export PATH=/opt/homebrew/bin:$PATH
+  # Au login, Colima (brew services) met environ 20 s a relancer le conteneur : attente jusqu'a 2 min.
+  if command -v colima >/dev/null; then
+    for i in {1..60}; do
+      [[ $(docker inspect -f '{{.State.Running}}' $TOOLS_CONTAINER 2>/dev/null) == true ]] && break
+      sleep 2
+    done
+  fi
+  if [[ $(docker inspect -f '{{.State.Running}}' $TOOLS_CONTAINER 2>/dev/null) == true ]]; then
+    # ui-config.json : message systeme par defaut (fichiers dans /work, chemin cite pour le bouton Telecharger).
+    TOOLS_ARGS=(--tools all --tools-runtime docker-container:$TOOLS_CONTAINER
+      --ui-config-file $ROOT/tools-runtime/ui-config.json)
+  else
+    echo "Conteneur $TOOLS_CONTAINER arrete : interface web sans outils"
+  fi
   exec /usr/bin/caffeinate -s /opt/homebrew/bin/llama-server -m $MODEL --alias $ALIAS \
     --host $HOST --port $PORT --api-key-file $PASSWORD_FILE \
-    $LLAMA_COMMON $WEBUI_ARGS $ARGS
+    $LLAMA_COMMON $WEBUI_ARGS $TOOLS_ARGS $ARGS
 else
   # mlx-dspark n'a pas d'option fichier pour la cle : elle est lue ici et passee en argument.
   exec /usr/bin/caffeinate -s $DSPARK_BIN serve --model $MODEL \

@@ -127,6 +127,12 @@ Ouvrez **`http://192.168.1.92:8080`** dans un navigateur. C'est l'interface de c
 - **Le mot de passe est mémorisé dans votre navigateur**, dans les réglages de l'interface. Vous pouvez le changer dans **Settings → API Key**.
 - **Les conversations restent dans votre navigateur**, pas sur le serveur.
 - **Cette documentation est disponible dans l'interface** : entrée **Documentation** sous Settings, ou directement `http://192.168.1.92:8080/?docs`. Elle est lisible sans mot de passe. On y trouve ce guide, puis les guides pas à pas OpenCode, Qwen Code et Hermes.
+- **Le modèle peut créer des fichiers** (Word, Excel, PowerPoint, PDF, scripts…). Demandez-le simplement, par exemple « fais-moi un document Word avec ce tableau ».
+  - Il travaille dans un environnement isolé sur le serveur, sans accès à Internet ni à vos fichiers.
+  - Dans sa réponse, un bouton **Télécharger** apparaît à côté du chemin du fichier (`/work/…`). Le fichier arrive dans les téléchargements de votre navigateur.
+  - L'entrée **Fichiers** du menu, sous Documentation, liste tous les fichiers produits, avec un bouton de téléchargement pour chacun.
+  - Ouvrez un **nouveau chat** si le modèle répond qu'il ne peut pas créer de fichier : les outils sont chargés à l'ouverture de la conversation.
+  - Ces fichiers sont visibles par tous les utilisateurs du serveur : n'y mettez rien de confidentiel.
 
 ## 3. Agents de code en terminal
 
