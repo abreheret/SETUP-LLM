@@ -7,12 +7,15 @@
 #   24/10/2026 : vision pour Flash-Next (mmproj-F16.gguf, etape 3, --mmproj dans models.conf)
 #   25/10/2026 : creation de fichiers depuis l'interface web, outils executes dans le conteneur
 #                setup-llm-tools sous Colima (etape 6 bis, tools-runtime/setup.sh, --tools dans start.sh) ;
-#                recherche web (SearXNG et serveur MCP dans setup-llm-web, --mcp-servers-config)
+#                recherche web (SearXNG et serveur MCP dans setup-llm-web, --mcp-servers-config) ;
+#                voix : dictee (whisper-server, modele large-v3-turbo) et acces HTTPS :8443 (Caddy),
+#                lecture a voix haute dans la page (etape 3, etape 6 ter, voice/)
 #
-# Usage : ./install.sh [--no-dspark] [--no-models] [--no-tools] [--no-sudo] [--yes]
+# Usage : ./install.sh [--no-dspark] [--no-models] [--no-tools] [--no-voice] [--no-sudo] [--yes]
 #   --no-dspark : ne pas installer mlx-dspark ni le modele MLX (profil 27b-dspark)
 #   --no-models : ne rien telecharger (modeles deja presents ou copies a la main)
 #   --no-tools  : ne pas installer Colima ni le conteneur des outils (interface web sans outils)
+#   --no-voice  : ne pas installer la dictee (whisper-server) ni l'acces HTTPS :8443 (Caddy)
 #   --no-sudo   : sauter les etapes systeme qui demandent sudo (limite GPU, veille, pare-feu)
 #   --yes       : repondre oui a toutes les confirmations (sudo et gros telechargements compris)
 #
@@ -45,16 +48,19 @@ DENSE_REPO=unsloth/Qwen3.8-27B-GGUF
 DENSE_FILES=(Qwen3.8-27B-Q8_0.gguf)
 MLX_REPO=mlx-community/Qwen3.8-27B-8bit
 DFLASH_REPO=incoai/Qwen3.8-27B-DFlash2
+WHISPER_REPO=ggerganov/whisper.cpp
+WHISPER_FILE=ggml-large-v3-turbo.bin
 
-WITH_DSPARK=1 WITH_MODELS=1 WITH_TOOLS=1 WITH_SUDO=1 ASSUME_YES=0
+WITH_DSPARK=1 WITH_MODELS=1 WITH_TOOLS=1 WITH_VOICE=1 WITH_SUDO=1 ASSUME_YES=0
 for arg in "$@"; do
   case $arg in
     --no-dspark) WITH_DSPARK=0 ;;
     --no-models) WITH_MODELS=0 ;;
     --no-tools) WITH_TOOLS=0 ;;
+    --no-voice) WITH_VOICE=0 ;;
     --no-sudo) WITH_SUDO=0 ;;
     --yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,16p' $0; exit 0 ;;
+    -h|--help) sed -n '2,20p' $0; exit 0 ;;
     *) echo "Option inconnue : $arg" >&2; exit 1 ;;
   esac
 done
@@ -210,6 +216,8 @@ else
   else
     warn "modeles GGUF non telecharges"
   fi
+  # Modele de transcription de la dictee (1,6 Go), lu par voice/whisper.sh.
+  (( WITH_VOICE )) && hf_fetch $WHISPER_REPO $MODELS/whisper $WHISPER_FILE
   if (( WITH_DSPARK )); then
     SIZE_MLX=$(total_size_gb $MLX_REPO) SIZE_DFLASH=$(total_size_gb $DFLASH_REPO)
     echo "  27B MLX 8 bits : $SIZE_MLX Go ; drafter DFlash 2 : $SIZE_DFLASH Go"
@@ -277,20 +285,46 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
-step "Etape 7 : demarrage automatique (LaunchAgent $AGENT_LABEL)"
+step "Etape 6 ter : voix (dictee whisper-server, acces HTTPS :8443 avec Caddy)"
 # ---------------------------------------------------------------------------------------------
-PLIST=$HOME/Library/LaunchAgents/$AGENT_LABEL.plist
-mkdir -p $HOME/Library/LaunchAgents
-sed "s|@ROOT@|$ROOT|g" $ROOT/system/$AGENT_LABEL.plist > $PLIST
-plutil -lint $PLIST >/dev/null
-if launchctl print gui/$(id -u)/$AGENT_LABEL >/dev/null 2>&1; then
-  launchctl bootout gui/$(id -u)/$AGENT_LABEL || true
-  # bootstrap echoue (erreur 5) tant que l'ancien service n'est pas completement arrete.
-  for i in {1..30}; do launchctl print gui/$(id -u)/$AGENT_LABEL >/dev/null 2>&1 || break; sleep 1; done
+# Le micro du navigateur n'est autorise qu'en HTTPS : Caddy sert l'interface web sur le port 8443
+# (certificat auto-signe, voice/https.sh) et /whisper/ vers whisper-server. Les LaunchAgents sont
+# installes a l'etape 7. La lecture a voix haute utilise les voix du navigateur : rien a installer.
+if (( ! WITH_VOICE )); then
+  warn "etape sautee (--no-voice) : pas de dictee dans l'interface web"
+else
+  for formula in whisper-cpp caddy; do
+    brew list --versions $formula >/dev/null || brew install $formula
+    ok "$(brew list --versions $formula)"
+  done
+  [[ -s $MODELS/whisper/$WHISPER_FILE ]] && ok "modele $WHISPER_FILE present" ||
+    warn "modele $MODELS/whisper/$WHISPER_FILE absent (etape 3) : la dictee ne marchera pas"
 fi
-for i in {1..5}; do launchctl bootstrap gui/$(id -u) $PLIST && break; sleep 2; done
-launchctl print gui/$(id -u)/$AGENT_LABEL >/dev/null 2>&1 || die "le LaunchAgent ne s'est pas charge"
-ok "LaunchAgent charge (profil $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf))"
+
+# ---------------------------------------------------------------------------------------------
+step "Etape 7 : demarrage automatique (LaunchAgents)"
+# ---------------------------------------------------------------------------------------------
+# fr.local.llm-server : llama-server ; fr.local.whisper-server et fr.local.llm-https : voix (etape 6 ter).
+install_agent() {
+  local label=$1 plist=$HOME/Library/LaunchAgents/$1.plist
+  sed "s|@ROOT@|$ROOT|g" $ROOT/system/$label.plist > $plist
+  plutil -lint $plist >/dev/null
+  if launchctl print gui/$(id -u)/$label >/dev/null 2>&1; then
+    launchctl bootout gui/$(id -u)/$label || true
+    # bootstrap echoue (erreur 5) tant que l'ancien service n'est pas completement arrete.
+    for i in {1..30}; do launchctl print gui/$(id -u)/$label >/dev/null 2>&1 || break; sleep 1; done
+  fi
+  for i in {1..5}; do launchctl bootstrap gui/$(id -u) $plist && break; sleep 2; done
+  launchctl print gui/$(id -u)/$label >/dev/null 2>&1 || die "le LaunchAgent $label ne s'est pas charge"
+}
+mkdir -p $HOME/Library/LaunchAgents
+install_agent $AGENT_LABEL
+ok "LaunchAgent $AGENT_LABEL charge (profil $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf))"
+if (( WITH_VOICE )); then
+  install_agent fr.local.whisper-server
+  install_agent fr.local.llm-https
+  ok "LaunchAgents fr.local.whisper-server et fr.local.llm-https charges"
+fi
 
 # ---------------------------------------------------------------------------------------------
 step "Etape 8 : pas de veille sur secteur"
@@ -344,6 +378,19 @@ if (( WITH_TOOLS )); then
     http://127.0.0.1:8080/tools -d '{"tool":"web_search","params":{"query":"wikipedia","max_results":1}}')
   [[ $OUT == *http* ]] && ok "recherche web active (web_search)" ||
     warn "recherche web inactive (voir docker logs setup-llm-searxng et $LOG_DIR/llm-server.log)"
+fi
+if (( WITH_VOICE )); then
+  for i in {1..30}; do curl -sk -m 2 https://127.0.0.1:8443/health | has ok && break; sleep 2; done
+  curl -sk -m 2 https://$IP:8443/health | has ok && ok "interface web en HTTPS (micro) : https://$IP:8443" ||
+    warn "HTTPS :8443 inactif (voir $LOG_DIR/llm-https.log)"
+  # Transcription d'une phrase generee par say : verifie Caddy, le mot de passe et whisper-server.
+  say -v Thomas -o /tmp/setup-llm-voice.wav --data-format=LEI16@16000 "Bonjour, ceci est un essai."
+  CODE_KO=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8443/whisper/inference -F file=@/tmp/setup-llm-voice.wav)
+  OUT=$(curl -sk -H "Authorization: Bearer $(<$PASSWORD_FILE)" https://127.0.0.1:8443/whisper/inference \
+    -F file=@/tmp/setup-llm-voice.wav -F response_format=json)
+  rm -f /tmp/setup-llm-voice.wav
+  [[ $OUT == *ssai* ]] && ok "dictee : transcription correcte, $CODE_KO sans mot de passe" ||
+    warn "dictee inactive : $OUT (voir $LOG_DIR/whisper-server.log)"
 fi
 if [[ $(awk -F= '/^DEFAULT_PROFILE=/{print $2}' $ROOT/models.conf) == flash ]]; then
   curl -s -H "Authorization: Bearer $(<$PASSWORD_FILE)" http://127.0.0.1:8080/props | has '"vision":true' &&

@@ -1,0 +1,36 @@
+# Acces HTTPS a l'interface web (port 8443), necessaire au micro : les navigateurs ne l'autorisent
+# qu'en HTTPS ou sur localhost. L'API reste aussi en HTTP sur le port 8080 pour les clients.
+# - /whisper/* : transcription (whisper-server sur 127.0.0.1:8178), avec le mot de passe partage ;
+# - le reste : llama-server (127.0.0.1:8080), qui verifie lui-meme le mot de passe.
+# Lance par voice/https.sh, qui fournit LLM_PASSWORD et LLM_TLS_DIR (certificat auto-signe).
+{
+	admin off
+	auto_https off
+	persist_config off
+	default_sni llm-server
+}
+
+:8443 {
+	tls {$LLM_TLS_DIR}/cert.pem {$LLM_TLS_DIR}/key.pem
+
+	@whisper_auth {
+		path /whisper/*
+		header Authorization "Bearer {$LLM_PASSWORD}"
+	}
+	handle @whisper_auth {
+		request_body {
+			max_size 50MB
+		}
+		uri strip_prefix /whisper
+		reverse_proxy 127.0.0.1:8178
+	}
+	handle /whisper/* {
+		respond "Unauthorized" 401
+	}
+	handle {
+		# flush_interval -1 : reponses en streaming (SSE) transmises au fil de l'eau.
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
+	}
+}

@@ -133,6 +133,11 @@ Ouvrez **`http://192.168.1.92:8080`** dans un navigateur. C'est l'interface de c
   - L'entrée **Fichiers** du menu, sous Documentation, liste tous les fichiers produits, avec un bouton de téléchargement pour chacun.
   - Ouvrez un **nouveau chat** si le modèle répond qu'il ne peut pas créer de fichier : les outils sont chargés à l'ouverture de la conversation.
   - Ces fichiers sont visibles par tous les utilisateurs du serveur : n'y mettez rien de confidentiel.
+- **Parler au lieu d'écrire, et écouter les réponses** :
+  - **Lecture à voix haute** : bouton 🔊 sous chaque réponse (cliquez à nouveau pour arrêter). La voix est française ou anglaise selon le texte, choisie parmi celles installées sur votre PC. Les blocs de code ne sont pas lus.
+  - **Dictée** : bouton **micro** à côté du bouton d'envoi. Cliquez, parlez, puis cliquez à nouveau : le texte transcrit s'ajoute au message, que vous pouvez corriger avant de l'envoyer. La transcription se fait sur le Mac, pas sur Internet.
+  - **Le micro demande l'adresse en HTTPS : `https://192.168.1.92:8443`.** Au premier accès, le navigateur affiche une alerte de sécurité, car le certificat est celui du Mac et non d'une autorité reconnue : cliquez sur *Paramètres avancés*, puis *Continuer vers le site*. Saisissez ensuite le mot de passe une fois. Vos conversations de l'adresse `http://…:8080` n'y apparaissent pas : chaque adresse garde les siennes.
+  - Le navigateur demande l'autorisation d'utiliser le micro la première fois : acceptez.
 - **Le modèle peut chercher sur Internet** pour l'actualité ou une information récente : il lance une recherche, lit les pages utiles et cite ses sources. Demandez-le simplement, par exemple « quelles sont les actualités du jour ? ». Il ne peut pas télécharger de logiciel (`pip install`…).
 
 ## 3. Agents de code en terminal

@@ -21,6 +21,7 @@ Installation faite les 19 et 20 octobre 2026, en suivant `SETUP_LLM_SERVER.md`. 
 | Service | LaunchAgent `fr.local.llm-server` : démarre à l'ouverture de session et redémarre après un plantage |
 | Réglages système | limite GPU à 110 Go (LaunchDaemon `fr.local.iogpu-wired-limit`), pas de veille sur secteur (`pmset`) |
 | Outils de l'interface web | **Colima** 0.10.3 (VM Linux, démarrée au login par `brew services`) et client `docker` 29.9.2 ; conteneur `setup-llm-tools` où le modèle exécute ses commandes ; fichiers produits dans `~/LLM-fichiers` ; recherche web (`setup-llm-web`, SearXNG `setup-llm-searxng`) |
+| Voix de l'interface web | **whisper.cpp** 1.9.5 (`whisper-server`, modèle `large-v3-turbo`, LaunchAgent `fr.local.whisper-server`) pour la dictée ; **Caddy** 2.11.7 (LaunchAgent `fr.local.llm-https`) pour l'accès HTTPS sur le port 8443, exigé par les navigateurs pour le micro |
 
 **Modèles** (dans `models/`, un seul chargé à la fois) :
 
@@ -63,7 +64,7 @@ Tous les paramètres sont dans **`models.conf`** :
 ## 3. Se connecter
 
 - **API** : `http://<IP_DU_MAC>:8080/v1`, avec l'en-tête `Authorization: Bearer <mot de passe>`. Le mot de passe est dans `password` (droits 600, exclu de git).
-- **Interface web** : `http://<IP_DU_MAC>:8080`. Elle demande le mot de passe au premier accès.
+- **Interface web** : `http://<IP_DU_MAC>:8080`, ou `https://<IP_DU_MAC>:8443` pour la dictée au micro (voir plus bas). Elle demande le mot de passe au premier accès.
 - **Documentation dans l'interface web** : entrée **Documentation** sous Settings, ou directement `http://<IP_DU_MAC>:8080/?docs`. Elle reprend `CLIENTS.md` et les guides `clients/*.md`, et reste lisible sans mot de passe.
   - **D'où vient la page** : llama-server sert `webui/` (`--path`), une copie de son interface intégrée à laquelle `tools/build-webui.py` ajoute l'entrée de menu et la doc. La doc est intégrée à `index.html` : llama-server ne sert sans mot de passe que les fichiers de son interface intégrée, un fichier ajouté (`docs/…`) demanderait la clé.
   - **Navigateurs déjà venus** : l'interface est mise en cache. Après une modification, rechargez avec **Cmd+Shift+R** (Ctrl+Shift+R sous Windows et Linux). Sur `localhost`, un service worker affiche « Update available » : cliquez sur **Reload**.
@@ -83,6 +84,13 @@ Tous les paramètres sont dans **`models.conf`** :
   - **Isolation** : ces deux conteneurs ont Internet (réseau Docker `llm-web`) mais pas `~/LLM-fichiers`. Le shell du modèle (`setup-llm-tools`) reste sans réseau : une page piégée ne peut pas lui faire envoyer les fichiers produits. `web_fetch_page` refuse les adresses non publiques (LAN, `localhost`, Docker), redirections comprises.
   - **Limites** : les pages chargées en JavaScript renvoient peu de texte ; les PDF ne sont pas lus. Un moteur peut limiter le débit de SearXNG : `docker logs setup-llm-searxng`.
   - **Désactiver** : `docker stop setup-llm-web`, puis redémarrer le service (`start.sh` n'ajoute `--mcp-servers-config` que si le conteneur tourne).
+- **Voix dans l'interface web** (ajoutée le 25 octobre 2026) : bouton **micro** à côté du bouton d'envoi (dictée), et bouton **Lire à voix haute** (🔊) sous chaque réponse.
+  - **Adresse avec micro : `https://<IP_DU_MAC>:8443`**. Les navigateurs n'autorisent le micro qu'en HTTPS (ou sur `localhost`). Sur `http://…:8080`, le bouton micro explique où aller. L'API reste en HTTP sur 8080 : les clients (OpenCode, Qwen Code…) n'ont rien à changer.
+  - **Certificat auto-signé** (`voice/https.sh`, dans `voice/tls/`, non versionné) : alerte du navigateur au premier accès (*Paramètres avancés*, puis *Continuer*). Il couvre `localhost`, le nom Bonjour et les IP du Mac ; il est régénéré au démarrage si l'IP a changé (nouvelle alerte dans ce cas).
+  - **Autre adresse, autres données** : sur `https://…:8443`, le navigateur ne reprend ni le mot de passe ni les conversations de `http://…:8080`. Il faut ressaisir le mot de passe une fois.
+  - **Dictée** : le navigateur enregistre, convertit en WAV 16 kHz, puis envoie à `https://…:8443/whisper/inference`. Caddy (`voice/Caddyfile`) n'accepte cette route qu'avec le mot de passe partagé et la transmet à `whisper-server` (`127.0.0.1:8178`, non joignable depuis le réseau). Modèle `large-v3-turbo` (1,6 Go, GPU), langue détectée automatiquement : 0,2 à 0,7 s pour une phrase. Tout reste sur le Mac. Dictée limitée à 5 minutes.
+  - **Lecture à voix haute** : synthèse vocale du navigateur, avec les voix installées sur le PC de l'utilisateur. La langue (français ou anglais) est déduite du texte. La réflexion, les blocs de code et les adresses web ne sont pas lus. Les voix « naturelles » (Edge) ou « premium » (macOS : Réglages, Accessibilité, Contenu énoncé) sont choisies en priorité.
+  - **Journaux** : `logs/whisper-server.log`, `logs/llm-https.log`.
 - **Guides pour les utilisateurs** :
   - `CLIENTS.md` : tous les clients (OpenCode, Qwen Code, Aider, Hermes, Codex, éditeurs, dépannage) ;
   - `clients/OPENCODE.md`, `clients/QWEN-CODE.md` et `clients/HERMES.md` : les guides pas à pas.
@@ -161,6 +169,8 @@ Paramètres communs aux profils llama.cpp (`CTX_ARGS` dans `models.conf`) : `-np
 | Pare-feu macOS | **non modifié** (désactivé au moment de l'installation) |
 | LaunchAgent `~/Library/LaunchAgents/fr.local.llm-server.plist` | `launchctl bootout gui/$(id -u)/fr.local.llm-server && rm ~/Library/LaunchAgents/fr.local.llm-server.plist` |
 | Paquets Homebrew `llama.cpp` (+ `ggml`, `libomp`), `hf`, `uv` | `brew uninstall llama.cpp hf uv && brew autoremove` |
+| LaunchAgents de la voix `fr.local.whisper-server` et `fr.local.llm-https` | `for L in whisper-server llm-https; do launchctl bootout gui/$(id -u)/fr.local.$L; rm ~/Library/LaunchAgents/fr.local.$L.plist; done` |
+| Paquets Homebrew `whisper-cpp` et `caddy`, modèle Whisper (1,6 Go) | `brew uninstall whisper-cpp caddy && brew autoremove && rm -rf models/whisper voice/tls` |
 | Colima, `docker`, VM, conteneurs `setup-llm-tools`, `setup-llm-web` et `setup-llm-searxng` (environ 2,5 Go sur disque) | `brew services stop colima && colima delete -f && brew uninstall colima docker && brew autoremove` ; fichiers produits : `rm -rf ~/LLM-fichiers` |
 | Jeton Hugging Face `~/.cache/huggingface/token` | `hf auth logout`, puis révoquez le jeton sur huggingface.co |
 | Modèles (environ 175 Go), venv, Python, journaux, mot de passe | `rm -rf models venv-dspark python logs password` dans ce dossier |
@@ -170,20 +180,20 @@ Paramètres communs aux profils llama.cpp (`CTX_ARGS` dans `models.conf`) : `-np
 ```bash
 cd /Users/amaury/DEV/SETUP-LLM
 ./install.sh            # tout
-./install.sh --help     # options : --no-dspark, --no-models, --no-tools, --no-sudo, --yes
+./install.sh --help     # options : --no-dspark, --no-models, --no-tools, --no-voice, --no-sudo, --yes
 ```
 
 Le script rejoue toute l'installation et peut être relancé sans risque : chaque étape vérifie d'abord ce qui est déjà fait. Il :
 1. vérifie le matériel ;
 2. installe Homebrew, `llama.cpp`, `hf` et `uv`, et contrôle que llama.cpp gère `qwen4exp` et le MTP ;
 3. règle la limite GPU et le LaunchDaemon (`sudo`) ;
-4. télécharge les modèles, dont le fichier de vision de Flash-Next (`mmproj-F16.gguf`), avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
+4. télécharge les modèles, dont le fichier de vision de Flash-Next (`mmproj-F16.gguf`) et le modèle de dictée Whisper (`ggml-large-v3-turbo.bin`), avec vérification de la taille et du sha256, et 5 essais en cas de coupure ;
 5. installe mlx-dspark et le lien `models/mlx-alias/qwen3.8-27b` ;
-6. crée le mot de passe s'il n'existe pas, puis installe Colima et les conteneurs de l'interface web : outils (shell, fichiers) et recherche web avec SearXNG (`tools-runtime/setup.sh`, sauf avec `--no-tools`) ;
-7. installe le LaunchAgent ;
+6. crée le mot de passe s'il n'existe pas, puis installe Colima et les conteneurs de l'interface web : outils (shell, fichiers) et recherche web avec SearXNG (`tools-runtime/setup.sh`, sauf avec `--no-tools`), et enfin `whisper-cpp` et `caddy` pour la voix (sauf avec `--no-voice`) ;
+7. installe les LaunchAgents : serveur, et pour la voix `fr.local.whisper-server` et `fr.local.llm-https` ;
 8. règle la veille avec `pmset` (`sudo`) ;
 9. autorise les serveurs dans le pare-feu s'il est actif (`sudo`) ;
-10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) et, pour le profil `flash`, que la vision est active ; contrôle aussi que les outils tournent dans le conteneur isolé et que `web_search` répond ;
+10. vérifie l'accès via l'IP du réseau (200 avec le mot de passe, 401 sans) et, pour le profil `flash`, que la vision est active ; contrôle aussi que les outils tournent dans le conteneur isolé, que `web_search` répond, que le HTTPS 8443 répond et que la dictée transcrit une phrase générée par `say` ;
 11. construit `webui/` (interface web avec la documentation clients) et redémarre le service pour la servir.
 
 Il demande confirmation avant chaque `sudo` et chaque gros téléchargement, sauf avec `--yes`. Installé dans un autre dossier que `/Users/amaury/DEV/SETUP-LLM`, il adapte les chemins absolus des scripts.
@@ -209,7 +219,9 @@ Il faut un jeton de type « Read », copié dans le presse-papiers.
 | `tools/load.py` | test de charge avec 1 puis 2 utilisateurs et prompts longs : `python3 tools/load.py essai 60000` |
 | `CLIENTS.md`, `clients/*.md` | guides de connexion pour les utilisateurs |
 | `tools/build-webui.py` | construit `webui/` : copie de l'interface web de llama-server, avec l'entrée Documentation et la doc clients en HTML |
-| `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrées Documentation et Fichiers, boutons Télécharger dans le chat), `docs.css` (style de la doc) |
+| `webui-src/` | sources ajoutées à cette copie : `inject.js` (entrées Documentation et Fichiers, boutons Télécharger dans le chat, micro et lecture à voix haute), `docs.css` (style de la doc) |
+| `voice/` | voix de l'interface web : `whisper.sh` (dictée, `whisper-server`), `https.sh` et `Caddyfile` (HTTPS sur le port 8443, certificat auto-signé) |
+| `system/fr.local.whisper-server.plist`, `system/fr.local.llm-https.plist` | LaunchAgents de la voix (`@ROOT@` remplacé par `install.sh`) |
 | `tools-runtime/` | outils de l'interface web : `Dockerfile` (image du conteneur du shell), `setup.sh` (Colima, images, conteneurs), `ui-config.json` (message système par défaut), `mcp.json` (serveur MCP de recherche web), `web/` (serveur MCP `server.py`), `searxng/` (image et réglages SearXNG) |
 
 Ne sont pas versionnés (voir `.gitignore`) : `models/`, `logs/`, `password`, `venv-dspark/`, `python/`, `webui/` (régénéré par `tools/build-webui.py`).
@@ -236,6 +248,7 @@ Chaque modification faite après l'installation, avec l'endroit où elle est rej
 | 24/10/2026 | **Vision pour Flash-Next** : `mmproj-F16.gguf` (862 Mio, `unsloth/Qwen3.8-Flash-Next-GGUF`) et `--mmproj` dans le profil `flash`. Corrige `image input is not supported - hint: … you may need to provide the mmproj` | `models.conf`, `install.sh`, `CLIENTS.md` (Cline : Image Support) | étape 3 (téléchargement), étape 10 (contrôle) |
 | 25/10/2026 | **Création de fichiers depuis l'interface web** : outils de llama-server (`--tools all`) exécutés dans un conteneur isolé (Colima, `setup-llm-tools`, sans réseau, seul `~/LLM-fichiers` partagé) ; bouton **Télécharger** dans les réponses et entrée **Fichiers** du menu ; message système par défaut. Répond à « Relance llama-server avec l'argument --agent », que le modèle proposait sans outils | `tools-runtime/`, `start.sh`, `models.conf` (`TOOLS_CONTAINER`), `webui-src/inject.js`, `webui-src/docs.css`, `install.sh`, `CLIENTS.md` | étape 6 bis (Colima et conteneur), étape 11 (interface web) |
 | 25/10/2026 | **Recherche web depuis l'interface web** : outils `web_search` et `web_fetch_page` (serveur MCP `tools-runtime/web/server.py` dans `setup-llm-web`, SearXNG dans `setup-llm-searxng`, Internet sans accès à `~/LLM-fichiers` ni au LAN). Le shell reste hors ligne | `tools-runtime/` (`web/`, `searxng/`, `mcp.json`, `setup.sh`, `ui-config.json`), `start.sh`, `models.conf` (`WEB_CONTAINER`), `install.sh`, `CLIENTS.md` | étape 6 bis, étape 10 (contrôle) |
+| 25/10/2026 | **Voix dans l'interface web** : dictée (bouton micro, `whisper-server` avec `large-v3-turbo`, sur le Mac) et lecture à voix haute des réponses (voix du navigateur, français ou anglais). Accès HTTPS sur le port 8443 (Caddy, certificat auto-signé), le micro étant refusé en HTTP | `voice/`, `system/fr.local.whisper-server.plist`, `system/fr.local.llm-https.plist`, `webui-src/inject.js`, `install.sh`, `status.sh`, `.gitignore`, `CLIENTS.md` | étape 3 (modèle), étape 6 ter, étape 7, étape 10 (contrôle) |
 | 25/10/2026 | **Préparation à la publication** : aucun secret dans les fichiers suivis ni dans l'historique (mot de passe, jeton Hugging Face, clés) ; prénom, nom du Mac et exemple SSH anonymisés ; `SETUP_M5.md` (notes personnelles) retiré du dépôt ; licence MIT ; encadré « Utiliser ce dépôt sur votre machine » | `README.md`, `CLIENTS.md`, `clients/HERMES.md`, `LICENSE`, `.gitignore` | — (documentation) |
 
 **Après une modification d'un guide `.md`**, régénérez la doc de l'interface web : `uv run --no-project --with markdown python tools/build-webui.py`.

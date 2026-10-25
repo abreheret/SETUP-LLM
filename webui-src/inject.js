@@ -9,6 +9,9 @@
 // conteneur setup-llm-tools, ~/LLM-fichiers sur le Mac) et les telecharge via POST /tools (read_file en
 // base64), avec la cle deja enregistree par l'interface. Lien direct : /?docs=files.
 // Dans les reponses du chat, chaque chemin /work/... ecrit en code recoit un bouton "Telecharger".
+// Voix : bouton micro a cote du bouton d'envoi (dictee transcrite par whisper-server via
+// https://<ip>:8443/whisper/, voir voice/) et bouton "Lire a voix haute" sous chaque reponse (voix du
+// systeme, francais ou anglais selon le texte). Le micro n'est autorise par les navigateurs qu'en HTTPS.
 (function () {
   const DATA = window.__SETUP_LLM_DOCS;
   const ROOT_ID = "setup-llm-docs";
@@ -253,6 +256,289 @@
     if (e.key === "Escape") closeDocs();
   });
 
+  // --- Voix : dictee et lecture a voix haute -----------------------------------------------------
+
+  const MIC_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px">' +
+    '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>' +
+    '<line x1="12" x2="12" y1="19" y2="22"/></svg>';
+  const SPEAK_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3 w-3">' +
+    '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
+  const STOP_ICON =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" ' +
+    'stroke="none" class="h-3 w-3"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const HTTPS_PORT = "8443";
+
+  function showNotice(anchor, html) {
+    document.getElementById("setup-llm-notice")?.remove();
+    const box = document.createElement("div");
+    box.id = "setup-llm-notice";
+    box.innerHTML = html + '<div style="text-align:right;margin-top:.5rem"><button type="button">OK</button></div>';
+    box.style.cssText =
+      "position:fixed;z-index:2147482500;max-width:24rem;padding:.8rem 1rem;border-radius:.6rem;font-size:.85rem;" +
+      "line-height:1.45;background:#1f1f22;color:#ececee;border:1px solid #3a3a40;box-shadow:0 8px 24px rgba(0,0,0,.35)";
+    box.querySelector("a")?.setAttribute("style", "color:#7aa7ff;text-decoration:underline");
+    box.querySelector("button").style.cssText =
+      "padding:.2rem .8rem;border-radius:.4rem;border:1px solid #3a3a40;background:#2a2a2e;color:inherit;cursor:pointer";
+    box.querySelector("button").addEventListener("click", () => box.remove());
+    document.body.appendChild(box);
+    const r = anchor.getBoundingClientRect();
+    box.style.left = Math.max(8, Math.min(r.right - box.offsetWidth, innerWidth - box.offsetWidth - 8)) + "px";
+    box.style.top = Math.max(8, r.top - box.offsetHeight - 10) + "px";
+  }
+
+  // Valeur du champ de saisie : passe par le setter natif puis un evenement input, pour que
+  // l'interface (Svelte) prenne le texte en compte.
+  function insertPrompt(text) {
+    const ta = document.querySelector("form textarea");
+    if (!ta || !text) return;
+    const current = ta.value;
+    const value = current && !/\s$/.test(current) ? current + " " + text : current + text;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, value);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.focus();
+  }
+
+  // Audio enregistre (webm/opus, mp4...) converti en WAV 16 kHz mono : le format lu par whisper-server
+  // sans ffmpeg.
+  async function toWav16k(blob) {
+    const ctx = new AudioContext();
+    const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+    ctx.close();
+    const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+    const src = off.createBufferSource();
+    src.buffer = decoded;
+    src.connect(off.destination);
+    src.start();
+    const pcm = (await off.startRendering()).getChannelData(0);
+    const buf = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+    const str = (o, t) => [...t].forEach((c, i) => buf.setUint8(o + i, c.charCodeAt(0)));
+    str(0, "RIFF");
+    buf.setUint32(4, 36 + pcm.length * 2, true);
+    str(8, "WAVEfmt ");
+    buf.setUint32(16, 16, true);
+    buf.setUint16(20, 1, true);
+    buf.setUint16(22, 1, true);
+    buf.setUint32(24, 16000, true);
+    buf.setUint32(28, 32000, true);
+    buf.setUint16(32, 2, true);
+    buf.setUint16(34, 16, true);
+    str(36, "data");
+    buf.setUint32(40, pcm.length * 2, true);
+    for (let i = 0; i < pcm.length; i++) {
+      buf.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+    }
+    return new Blob([buf], { type: "audio/wav" });
+  }
+
+  async function transcribe(blob) {
+    const form = new FormData();
+    form.append("file", await toWav16k(blob), "audio.wav");
+    form.append("response_format", "json");
+    form.append("temperature", "0");
+    const headers = {};
+    const key = apiKey();
+    if (key) headers.Authorization = "Bearer " + key;
+    const r = await fetch("./whisper/inference", { method: "POST", headers, body: form });
+    if (r.status === 401) throw new Error("clé API absente ou invalide : saisissez-la dans Settings");
+    if (!r.ok) {
+      // Seul le port HTTPS (Caddy) sert /whisper/ : ailleurs (http://localhost:8080 sur le Mac...), 404.
+      throw new Error(
+        `transcription indisponible (HTTP ${r.status}) : utilisez https://${location.hostname}:${HTTPS_PORT}/`
+      );
+    }
+    return ((await r.json()).text || "").trim();
+  }
+
+  let recording = null;
+  async function toggleMic(btn) {
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+      const url = `https://${location.hostname}:${HTTPS_PORT}/`;
+      showNotice(
+        btn,
+        "<b>Le micro demande une connexion HTTPS.</b><br>Ouvrez " +
+          `<a href="${url}">${url}</a>. Au premier accès, le navigateur affiche une alerte de sécurité ` +
+          "(certificat du Mac) : <i>Paramètres avancés</i>, puis <i>Continuer</i>. Saisissez ensuite le mot de passe " +
+          "une fois : les conversations de l'adresse en HTTP n'y sont pas reprises."
+      );
+      return;
+    }
+    if (recording) {
+      recording.recorder.stop();
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (e) {
+      showNotice(btn, "Micro inaccessible : " + esc(e.message) + "<br>Autorisez le micro pour ce site dans le navigateur.");
+      return;
+    }
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.onstop = async () => {
+      clearTimeout(recording?.timer);
+      recording = null;
+      stream.getTracks().forEach((t) => t.stop());
+      setMicState(btn, "busy");
+      try {
+        insertPrompt(await transcribe(new Blob(chunks, { type: recorder.mimeType })));
+      } catch (e) {
+        showNotice(btn, "Transcription impossible : " + esc(e.message));
+      } finally {
+        setMicState(btn, "idle");
+      }
+    };
+    recorder.start();
+    // Dictee limitee a 5 minutes.
+    recording = { recorder, timer: setTimeout(() => recorder.state === "recording" && recorder.stop(), 300000) };
+    setMicState(btn, "rec");
+  }
+
+  function setMicState(btn, state) {
+    btn.dataset.state = state;
+    btn.style.color = state === "rec" ? "#ef4444" : "";
+    btn.style.animation = state === "rec" ? "setup-llm-pulse 1.2s ease-in-out infinite" : "";
+    btn.style.opacity = state === "busy" ? ".5" : "";
+    btn.disabled = state === "busy";
+    btn.title = state === "rec" ? "Arrêter et transcrire" : state === "busy" ? "Transcription…" : "Dicter (micro)";
+    btn.setAttribute("aria-label", btn.title);
+  }
+
+  function addMicButton() {
+    const form = document.querySelector("form textarea")?.closest("form");
+    if (!form || form.querySelector(".setup-llm-mic")) return;
+    const submit = form.querySelector('button[type="submit"]');
+    if (!submit) return;
+    if (!document.getElementById("setup-llm-voice-style")) {
+      const st = document.createElement("style");
+      st.id = "setup-llm-voice-style";
+      st.textContent =
+        "@keyframes setup-llm-pulse{0%,100%{opacity:1}50%{opacity:.4}}" +
+        ".setup-llm-mic{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;" +
+        "border-radius:9999px;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.75}" +
+        ".setup-llm-mic:hover{opacity:1;background:rgba(127,127,127,.15)}";
+      document.head.appendChild(st);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "setup-llm-mic";
+    btn.innerHTML = MIC_ICON;
+    setMicState(btn, recording ? "rec" : "idle");
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggleMic(btn);
+    });
+    submit.insertAdjacentElement("beforebegin", btn);
+  }
+
+  // Texte lisible d'une reponse : sans la reflexion, les blocs de code ni les adresses web.
+  function speakableText(group) {
+    const parts = [];
+    for (const md of group.querySelectorAll(".agentic-text .markdown-content")) {
+      const c = md.cloneNode(true);
+      c.querySelectorAll("pre, .code-block-wrapper, button, svg").forEach((el) => el.replaceWith(" "));
+      for (const el of c.querySelectorAll("p, li, h1, h2, h3, h4, tr, br, div")) el.append(". ");
+      parts.push(c.textContent);
+    }
+    return parts
+      .join(". ")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/[*_#`>|]+/g, " ")
+      .replace(/(\s*\.\s*){2,}/g, ". ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function detectLang(text) {
+    const t = " " + text.toLowerCase() + " ";
+    const count = (words) => words.reduce((n, w) => n + t.split(" " + w + " ").length - 1, 0);
+    const fr = count(["le", "la", "les", "des", "est", "et", "une", "pour", "dans", "que", "vous", "pas"]) + (t.match(/[éèêàçù]/g) || []).length / 3;
+    const en = count(["the", "and", "is", "of", "to", "in", "that", "for", "you", "with", "are", "this"]);
+    return fr >= en ? "fr" : "en";
+  }
+
+  // Meilleure voix du systeme pour la langue : voix "naturelles" ou "premium" d'abord (Edge, macOS).
+  function pickVoice(lang) {
+    const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
+    const score = (v) =>
+      (/natural|neural|premium|enhanced|online/i.test(v.name) ? 4 : 0) +
+      (/google/i.test(v.name) ? 2 : 0) +
+      (v.lang.toLowerCase() === (lang === "fr" ? "fr-fr" : "en-us") ? 1 : 0) +
+      (v.localService ? 0 : 1);
+    return voices.sort((a, b) => score(b) - score(a))[0] || null;
+  }
+
+  let speakingBtn = null;
+  function stopSpeaking() {
+    speechSynthesis.cancel();
+    if (speakingBtn) setSpeakState(speakingBtn, false);
+    speakingBtn = null;
+  }
+
+  function setSpeakState(btn, on) {
+    const svg = btn.querySelector("svg");
+    const cls = svg?.getAttribute("class");
+    if (svg) svg.outerHTML = on ? STOP_ICON : SPEAK_ICON;
+    if (cls) btn.querySelector("svg").setAttribute("class", cls);
+    btn.title = on ? "Arrêter la lecture" : "Lire à voix haute";
+    btn.setAttribute("aria-label", btn.title);
+  }
+
+  function speak(group, btn) {
+    const wasMine = speakingBtn === btn;
+    stopSpeaking();
+    if (wasMine) return;
+    const text = speakableText(group);
+    if (!text) return;
+    const lang = detectLang(text);
+    const voice = pickVoice(lang);
+    // Phrases lues une a une : Chrome coupe les longues lectures d'un seul bloc.
+    const sentences = text.split(/(?<=[.!?;:])\s+/);
+    const chunks = [];
+    for (const s of sentences) {
+      if (chunks.length && (chunks[chunks.length - 1] + s).length < 220) chunks[chunks.length - 1] += " " + s;
+      else chunks.push(s);
+    }
+    speakingBtn = btn;
+    setSpeakState(btn, true);
+    chunks.forEach((chunk, i) => {
+      const u = new SpeechSynthesisUtterance(chunk.trim());
+      u.lang = voice?.lang || (lang === "fr" ? "fr-FR" : "en-US");
+      if (voice) u.voice = voice;
+      if (i === chunks.length - 1) u.onend = () => speakingBtn === btn && stopSpeaking();
+      speechSynthesis.speak(u);
+    });
+  }
+
+  function addSpeakButtons() {
+    if (!("speechSynthesis" in window)) return;
+    for (const group of document.querySelectorAll('[aria-label="Assistant message with actions"]')) {
+      const copy = group.querySelector('button[aria-label="Copy"]');
+      if (!copy || copy.parentElement.querySelector(".setup-llm-speak")) continue;
+      const btn = copy.cloneNode(true);
+      btn.classList.add("setup-llm-speak");
+      btn.removeAttribute("data-slot");
+      btn.removeAttribute("data-state");
+      setSpeakState(btn, false);
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        speak(group, btn);
+      });
+      copy.insertAdjacentElement("afterend", btn);
+    }
+  }
+
+  // Chrome charge la liste des voix apres coup.
+  if ("speechSynthesis" in window) speechSynthesis.getVoices();
+
   // --- Entree de menu ----------------------------------------------------------------------------
 
   // Menu deplie : bouton avec le texte "Settings". Menu replie : icone seule, aria-label="Settings".
@@ -352,9 +638,13 @@
   new MutationObserver(() => {
     addLink();
     addDownloadButtons();
+    addMicButton();
+    addSpeakButtons();
   }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   addLink();
   addDownloadButtons();
+  addMicButton();
+  addSpeakButtons();
 
   const wanted = new URLSearchParams(location.search).get("docs");
   if (wanted !== null) {

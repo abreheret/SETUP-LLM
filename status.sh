@@ -37,7 +37,7 @@ echo "== Acces reseau =="
 NAME=$(scutil --get LocalHostName)
 for IF in en0 en1; do
   IP=$(ipconfig getifaddr $IF 2>/dev/null) || continue
-  echo "  $IF : http://$IP:$PORT/v1   (interface web : http://$IP:$PORT)"
+  echo "  $IF : http://$IP:$PORT/v1   (interface web : http://$IP:$PORT, avec micro : https://$IP:8443)"
 done
 echo "  Bonjour : http://$NAME.local:$PORT/v1   (WSL2 : utiliser l'IP)"
 
