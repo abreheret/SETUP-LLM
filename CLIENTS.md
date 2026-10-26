@@ -130,9 +130,10 @@ Ouvrez **`http://192.168.1.92:8080`** dans un navigateur. C'est l'interface de c
 - **Le modèle peut créer des fichiers** (Word, Excel, PowerPoint, PDF, scripts…). Demandez-le simplement, par exemple « fais-moi un document Word avec ce tableau ».
   - Il travaille dans un environnement isolé sur le serveur, sans accès à Internet ni à vos fichiers.
   - Dans sa réponse, un bouton **Télécharger** apparaît à côté du chemin du fichier (`/work/…`). Le fichier arrive dans les téléchargements de votre navigateur.
-  - L'entrée **Fichiers** du menu, sous Documentation, liste tous les fichiers produits, avec un bouton de téléchargement pour chacun.
+  - Chaque conversation a son propre dossier sur le serveur. **Supprimer la conversation supprime aussi ses fichiers** : téléchargez-les avant.
+  - L'entrée **Fichiers** du menu, sous Documentation, liste les fichiers de vos conversations, regroupés par conversation, avec **Télécharger** et **Supprimer** (cliquez deux fois pour confirmer).
   - Ouvrez un **nouveau chat** si le modèle répond qu'il ne peut pas créer de fichier : les outils sont chargés à l'ouverture de la conversation.
-  - Ces fichiers sont visibles par tous les utilisateurs du serveur : n'y mettez rien de confidentiel.
+  - Les autres utilisateurs ne voient pas vos fichiers. L'administrateur du serveur, lui, y a accès.
 - **Parler au lieu d'écrire, et écouter les réponses** :
   - **Lecture à voix haute** : bouton 🔊 sous chaque réponse (cliquez à nouveau pour arrêter). La voix est française ou anglaise selon le texte, choisie parmi celles installées sur votre PC. Les blocs de code ne sont pas lus.
   - **Dictée** : bouton **micro** à côté du bouton d'envoi. Cliquez, parlez, puis cliquez à nouveau : le texte transcrit s'ajoute au message, que vous pouvez corriger avant de l'envoyer. La transcription se fait sur le Mac, pas sur Internet.

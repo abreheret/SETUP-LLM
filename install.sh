@@ -10,6 +10,8 @@
 #                recherche web (SearXNG et serveur MCP dans setup-llm-web, --mcp-servers-config) ;
 #                voix : dictee (whisper-server, modele large-v3-turbo) et acces HTTPS :8443 (Caddy),
 #                lecture a voix haute dans la page (etape 3, etape 6 ter, voice/)
+#   26/10/2026 : un dossier par conversation (/work/<id>, efface avec elle) dans le volume Docker
+#                setup-llm-fichiers, /work non listable ; suppression depuis le menu Fichiers
 #
 # Usage : ./install.sh [--no-dspark] [--no-models] [--no-tools] [--no-voice] [--no-sudo] [--yes]
 #   --no-dspark : ne pas installer mlx-dspark ni le modele MLX (profil 27b-dspark)
@@ -60,7 +62,7 @@ for arg in "$@"; do
     --no-voice) WITH_VOICE=0 ;;
     --no-sudo) WITH_SUDO=0 ;;
     --yes) ASSUME_YES=1 ;;
-    -h|--help) sed -n '2,20p' $0; exit 0 ;;
+    -h|--help) sed -n '2,22p' $0; exit 0 ;;
     *) echo "Option inconnue : $arg" >&2; exit 1 ;;
   esac
 done
@@ -279,7 +281,7 @@ step "Etape 6 bis : outils de l'interface web (Colima, conteneur setup-llm-tools
 if (( ! WITH_TOOLS )); then
   warn "etape sautee (--no-tools) : l'interface web ne pourra pas creer de fichiers"
 elif $ROOT/tools-runtime/setup.sh; then
-  ok "Colima demarre au login (brew services), fichiers produits dans ~/LLM-fichiers, recherche web prete"
+  ok "Colima demarre au login (brew services), fichiers produits dans le volume setup-llm-fichiers, recherche web prete"
 else
   warn "tools-runtime/setup.sh a echoue : l'interface web reste sans outils"
 fi

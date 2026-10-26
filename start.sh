@@ -45,7 +45,7 @@ if [[ $ENGINE == llama ]]; then
     done
   fi
   if [[ $(docker inspect -f '{{.State.Running}}' $TOOLS_CONTAINER 2>/dev/null) == true ]]; then
-    # ui-config.json : message systeme par defaut (fichiers dans /work, chemin cite pour le bouton Telecharger).
+    # ui-config.json : message systeme par defaut (fichiers sous /work, chemin cite pour le bouton Telecharger).
     TOOLS_ARGS=(--tools all --tools-runtime docker-container:$TOOLS_CONTAINER
       --ui-config-file $ROOT/tools-runtime/ui-config.json)
     # Recherche et lecture web (serveur MCP dans setup-llm-web, avec SearXNG) : seulement s'il tourne.

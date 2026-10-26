@@ -5,10 +5,13 @@
 // sans mot de passe que les fichiers de son interface integree : un fichier docs/*.html demanderait la cle.
 // Le bouton Settings est clone (sans ses gestionnaires d'evenements) ; un MutationObserver le remet en
 // place quand l'interface redessine le menu. Lien direct : http://<ip>:8080/?docs ou /?docs=opencode.
-// Entree "Fichiers" : liste les fichiers crees par le modele avec les outils serveur (dossier /work du
-// conteneur setup-llm-tools, ~/LLM-fichiers sur le Mac) et les telecharge via POST /tools (read_file en
-// base64), avec la cle deja enregistree par l'interface. Lien direct : /?docs=files.
+// Entree "Fichiers" : liste les fichiers crees par le modele avec les outils serveur (volume /work du
+// conteneur setup-llm-tools) et les telecharge via POST /tools (read_file en base64), avec la cle deja
+// enregistree par l'interface. Lien direct : /?docs=files.
 // Dans les reponses du chat, chaque chemin /work/... ecrit en code recoit un bouton "Telecharger".
+// Chaque conversation a son dossier /work/<id> : dossier courant des outils, indique au modele, efface
+// avec la conversation. /work n'est pas listable : le menu Fichiers ne montre que les dossiers des
+// conversations de ce navigateur, regroupes par conversation, et permet de les supprimer.
 // Voix : bouton micro a cote du bouton d'envoi (dictee transcrite par whisper-server via
 // https://<ip>:8443/whisper/, voir voice/) et bouton "Lire a voix haute" sous chaque reponse (voix du
 // systeme, francais ou anglais selon le texte). Le micro n'est autorise par les navigateurs qu'en HTTPS.
@@ -43,12 +46,113 @@
     const key = apiKey();
     if (key) headers.Authorization = "Bearer " + key;
     if (respType) headers["x-resp-type"] = respType;
-    const r = await fetch("./tools", { method: "POST", headers, body: JSON.stringify({ tool, params }) });
+    const r = await origFetch("./tools", { method: "POST", headers, body: JSON.stringify({ tool, params }) });
     if (r.status === 401) throw new Error("clé API absente ou invalide : saisissez-la dans Settings");
     if (r.status === 404) throw new Error("outils désactivés sur le serveur (conteneur setup-llm-tools arrêté ?)");
     const data = await r.json();
     if (data.error) throw new Error(data.error);
     return data;
+  }
+
+  // --- Dossier par conversation ------------------------------------------------------------------
+  // Les outils du serveur prennent leur dossier courant dans l'en-tete x-tool-cwd, que l'interface
+  // n'envoie que si l'utilisateur a choisi un dossier (commande /cwd). Sinon fetch est intercepte :
+  // - requete au modele : le message systeme recoit le dossier /work/<id> de la conversation affichee
+  //   (#/chat/<id>) ;
+  // - appel d'outil : il s'execute dans le dossier de la conversation de la derniere requete au
+  //   modele (ses appels d'outils la suivent), cree au besoin.
+  // Conversation supprimee (base IndexedDB LlamaUi de l'interface) : son dossier est efface.
+  const origFetch = window.fetch.bind(window);
+  const CONV_RE = /^#\/chat\/([A-Za-z0-9_-]{1,100})/;
+  const SAFE_ID = /^[A-Za-z0-9_-]{1,100}$/;
+  let lastConv = null;
+  const madeDirs = new Set();
+
+  // Argument shell entre apostrophes.
+  const sq = (t) => "'" + String(t).replace(/'/g, "'\\''") + "'";
+  const convDir = (id) => FILES_DIR + "/" + id;
+
+  async function ensureDir(id) {
+    if (madeDirs.has(id)) return;
+    await runTool("exec_shell_command", { command: "mkdir -p -- " + sq(convDir(id)) });
+    madeDirs.add(id);
+  }
+
+  function removeConvDir(id) {
+    madeDirs.delete(id);
+    runTool("exec_shell_command", { command: "rm -rf -- " + sq(convDir(id)) }).catch((e) =>
+      console.warn("[setup-llm] dossier de conversation non efface :", e.message)
+    );
+  }
+
+  function withConvNote(body, id) {
+    const data = JSON.parse(body);
+    if (!Array.isArray(data.messages)) return body;
+    const dir = convDir(id);
+    const note =
+      `Dossier de travail de cette conversation : ${dir} (dossier courant des outils). Enregistre-y les ` +
+      `fichiers que tu produis et cite leur chemin complet entre backticks, par exemple \`${dir}/rapport.docx\`.`;
+    const sys = data.messages[0]?.role === "system" ? data.messages[0] : null;
+    if (sys && typeof sys.content === "string") sys.content += "\n\n" + note;
+    else if (sys && Array.isArray(sys.content)) sys.content.push({ type: "text", text: note });
+    else data.messages.unshift({ role: "system", content: note });
+    return JSON.stringify(data);
+  }
+
+  window.fetch = async function (input, init) {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url || "";
+    if ((init?.method || "GET").toUpperCase() === "POST" && typeof init?.body === "string") {
+      try {
+        if (/\/chat\/completions(\?|$)/.test(url)) {
+          lastConv = location.hash.match(CONV_RE)?.[1] || null;
+          if (lastConv) init = { ...init, body: withConvNote(init.body, lastConv) };
+        } else if (/\/tools(\?|$)/.test(url) && lastConv) {
+          const headers = new Headers(init.headers);
+          if (!headers.has("x-tool-cwd")) {
+            await ensureDir(lastConv);
+            headers.set("x-tool-cwd", convDir(lastConv));
+            init = { ...init, headers };
+          }
+        }
+      } catch (e) {
+        console.warn("[setup-llm] dossier de conversation :", e.message);
+      }
+    }
+    return origFetch(input, init);
+  };
+
+  // Dexie (base de l'interface) efface une conversation avec delete(id), une a une.
+  const idbDelete = IDBObjectStore.prototype.delete;
+  IDBObjectStore.prototype.delete = function (key) {
+    const req = idbDelete.apply(this, arguments);
+    if (this.name === "conversations" && this.transaction.db.name === "LlamaUi" &&
+        typeof key === "string" && SAFE_ID.test(key)) {
+      this.transaction.addEventListener("complete", () => removeConvDir(key));
+    }
+    return req;
+  };
+
+  // Noms des conversations de ce navigateur, par id (base IndexedDB de l'interface, sans la creer).
+  function convNames() {
+    return new Promise((resolve) => {
+      const req = indexedDB.open("LlamaUi");
+      req.onupgradeneeded = () => req.transaction.abort();
+      req.onerror = () => resolve({});
+      req.onsuccess = () => {
+        const db = req.result;
+        const done = (names) => {
+          db.close();
+          resolve(names);
+        };
+        try {
+          const all = db.transaction("conversations").objectStore("conversations").getAll();
+          all.onsuccess = () => done(Object.fromEntries(all.result.map((c) => [c.id, c.name])));
+          all.onerror = () => done({});
+        } catch {
+          done({});
+        }
+      };
+    });
   }
 
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -59,17 +163,20 @@
     return (n / 1024 / 1024).toFixed(1) + " Mo";
   }
 
-  async function listFiles() {
-    // find -printf : chemin relatif, taille, date ; les plus recents en premier.
-    const cmd =
-      `find ${FILES_DIR} -type f -not -path '*/.*' -printf '%T@\\t%P\\t%s\\n' | sort -rn | head -500`;
+  // Fichiers des dossiers /work/<id> donnes (/work n'est pas listable). find -printf : date, chemin
+  // sous /work, taille ; les plus recents en premier.
+  async function listFiles(ids) {
+    ids = ids.filter((id) => SAFE_ID.test(id));
+    if (!ids.length) return [];
+    const dirs = ids.map((id) => sq(convDir(id))).join(" ");
+    const cmd = `find ${dirs} -type f -not -path '*/.*' -printf '%T@\\t%p\\t%s\\n' 2>/dev/null | sort -rn | head -500`;
     const out = (await runTool("exec_shell_command", { command: cmd })).plain_text_response || "";
     return out
       .split("\n")
       .map((l) => l.split("\t"))
-      .filter((f) => f.length === 3)
+      .filter((f) => f.length === 3 && f[1].startsWith(FILES_DIR + "/"))
       .map(([time, path, size]) => ({
-        path,
+        path: path.slice(FILES_DIR.length + 1),
         size: Number(size),
         // Le conteneur est en UTC : date formatee dans le fuseau du navigateur.
         date: new Date(Number(time) * 1000).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }),
@@ -124,32 +231,83 @@
     }
   }
 
-  async function renderFiles(main) {
+  // Bouton en deux temps : premier clic "Confirmer ?", second clic dans les 3 s pour agir.
+  function confirmClick(btn, action) {
+    if (btn.dataset.armed) {
+      btn.disabled = true;
+      action();
+      return;
+    }
+    const label = btn.textContent;
+    btn.dataset.armed = "1";
+    btn.textContent = "Confirmer ?";
+    setTimeout(() => {
+      delete btn.dataset.armed;
+      if (!btn.disabled) btn.textContent = label;
+    }, 3000);
+  }
+
+  async function removePath(path, main) {
+    if (!path || path.split("/").includes("..")) return;
+    let error = "";
+    try {
+      await runTool("exec_shell_command", { command: "rm -rf -- " + sq(FILES_DIR + "/" + path) });
+      madeDirs.delete(path);
+    } catch (e) {
+      error = "Suppression impossible : " + e.message;
+    }
+    renderFiles(main, error);
+  }
+
+  async function renderFiles(main, error) {
     main.innerHTML =
       "<h1>Fichiers</h1>" +
-      "<p>Fichiers créés par le modèle avec les outils de l'interface (Shell, Write file), dans son dossier " +
-      `<code>${FILES_DIR}</code>. Demandez-lui d'y enregistrer ses fichiers, puis téléchargez-les ici.</p>` +
-      '<p><button type="button" class="files-refresh">Actualiser</button></p><div class="files-list">Chargement…</div>';
+      "<p>Fichiers créés par le modèle avec les outils de l'interface (Shell, Write file), pour les conversations " +
+      "de ce navigateur. Chaque conversation a son dossier sur le serveur, effacé avec elle ; les autres " +
+      "utilisateurs ne le voient pas.</p>" +
+      '<p><button type="button" class="files-refresh">Actualiser</button></p>' +
+      (error ? `<p class="files-error">${esc(error)}</p>` : "") +
+      '<div class="files-list">Chargement…</div>';
     main.querySelector(".files-refresh").addEventListener("click", () => renderFiles(main));
     const list = main.querySelector(".files-list");
     try {
-      const files = await listFiles();
+      const names = await convNames();
+      const files = await listFiles(Object.keys(names));
       if (!files.length) {
         list.innerHTML = "<p>Aucun fichier pour le moment.</p>";
         return;
       }
-      list.innerHTML =
-        "<table><thead><tr><th>Nom</th><th>Taille</th><th>Modifié</th><th></th></tr></thead><tbody>" +
-        files
-          .map(
-            (f) =>
-              `<tr><td><code>${esc(f.path)}</code></td><td>${formatSize(f.size)}</td><td>${esc(f.date)}</td>` +
-              `<td><button type="button" class="files-dl" data-path="${esc(f.path)}">Télécharger</button></td></tr>`
-          )
-          .join("") +
-        "</tbody></table>";
+      // Regroupement par premier dossier (une conversation), les plus recents en premier.
+      const groups = new Map();
+      for (const f of files) {
+        const dir = f.path.slice(0, f.path.indexOf("/"));
+        if (!groups.has(dir)) groups.set(dir, []);
+        groups.get(dir).push(f);
+      }
+      list.innerHTML = [...groups]
+        .map(([dir, items]) => {
+          return (
+            `<div class="files-group"><h3>Conversation « ${esc(names[dir])} »</h3>` +
+            `<button type="button" class="files-del" data-path="${esc(dir)}">Supprimer le dossier</button></div>` +
+            "<table><thead><tr><th>Nom</th><th>Taille</th><th>Modifié</th><th></th></tr></thead><tbody>" +
+            items
+              .map(
+                (f) =>
+                  `<tr><td><code>${esc(f.path.slice(dir.length + 1))}</code></td>` +
+                  `<td>${formatSize(f.size)}</td><td>${esc(f.date)}</td><td class="files-actions">` +
+                  `<button type="button" class="files-dl" data-path="${esc(f.path)}">Télécharger</button>` +
+                  `<button type="button" class="files-del" data-path="${esc(f.path)}">Supprimer</button></td></tr>`
+              )
+              .join("") +
+            "</tbody></table>"
+          );
+        })
+        .join("");
       for (const btn of list.querySelectorAll(".files-dl")) {
         btn.addEventListener("click", () => download(btn.dataset.path, btn));
+      }
+      for (const btn of list.querySelectorAll(".files-del")) {
+        btn.addEventListener("click", () => confirmClick(btn, () => removePath(btn.dataset.path, main)));
       }
     } catch (e) {
       list.innerHTML = `<p>Impossible de lister les fichiers : ${esc(e.message)}</p>`;

@@ -12,3 +12,4 @@ webui.tmp/
 SETUP_M5.md
 # Certificat auto-signe du port HTTPS 8443 (genere par voice/https.sh).
 voice/tls/
+.DS_Store

@@ -1,15 +1,18 @@
 #!/bin/zsh
 # Outils de l'interface web (shell, lecture et ecriture de fichiers) dans un conteneur isole.
 # llama-server execute ces outils dans le conteneur setup-llm-tools (--tools-runtime, voir start.sh) :
-# le modele n'a ni reseau ni acces au Mac, seulement au dossier partage ~/LLM-fichiers (/work).
-# Les fichiers produits se telechargent depuis l'interface web (bouton Telecharger, menu Fichiers).
+# le modele n'a ni reseau ni acces au Mac, seulement au volume Docker setup-llm-fichiers (/work).
+# Chaque conversation y a son dossier /work/<id> ; /work n'est pas listable (droits 1733, voir Dockerfile),
+# pour qu'un utilisateur ne voie pas les fichiers des autres. Les fichiers se telechargent depuis
+# l'interface web (bouton Telecharger, menu Fichiers).
 # Recherche web : serveur MCP (web/server.py, outils web_search et web_fetch_page) dans le conteneur
 # setup-llm-web, avec SearXNG (setup-llm-searxng) ; reseau Docker llm-web avec acces Internet, sans
-# ~/LLM-fichiers. Le shell (setup-llm-tools) reste sans reseau.
+# fichiers. Le shell (setup-llm-tools) reste sans reseau.
 #
 # Usage : /Users/amaury/DEV/SETUP-LLM/tools-runtime/setup.sh
 #   - installe Colima (VM Linux legere) et le client docker avec Homebrew (sans sudo)
 #   - demarre Colima au login (brew services), VM : 2 CPU, 2 Gio, 20 Gio, seul ~/LLM-fichiers monte
+#     (sans --mount, Colima monterait tout le dossier personnel ; les outils ne l'utilisent plus)
 #   - construit les images setup-llm-tools, setup-llm-searxng et setup-llm-web, et (re)cree les conteneurs
 # Idempotent. Redemarrer ensuite le service pour que llama-server active les outils :
 #   launchctl kickstart -k gui/$(id -u)/fr.local.llm-server
@@ -22,6 +25,7 @@ SEARXNG=setup-llm-searxng
 WEB=setup-llm-web
 WEB_NET=llm-web
 FILES_DIR=$HOME/LLM-fichiers
+FILES_VOLUME=setup-llm-fichiers
 export PATH=/opt/homebrew/bin:$PATH
 
 for formula in colima docker; do
@@ -57,13 +61,16 @@ build $WEB $DIR/web
 
 # Conteneur toujours recree : il reprend la derniere image. Restrictions : pas de reseau, systeme en
 # lecture seule sauf /work et /tmp, aucun privilege, 1 Gio de memoire, 256 processus.
+# Volume garde d'une installation a l'autre ; droits de /work reappliques (volume plus ancien).
 docker rm -f $CONTAINER >/dev/null 2>&1 || true
+docker volume inspect $FILES_VOLUME >/dev/null 2>&1 || docker volume create $FILES_VOLUME >/dev/null
+docker run --rm -u 0 --network none -v $FILES_VOLUME:/work $IMAGE sh -c 'chown 0:0 /work && chmod 1733 /work'
 docker run -d --name $CONTAINER --restart unless-stopped \
   --network none --read-only --tmpfs /tmp --tmpfs /home/agent \
   --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --memory 1g --cpus 2 \
-  -v $FILES_DIR:/work $IMAGE sleep infinity >/dev/null
+  -v $FILES_VOLUME:/work $IMAGE sleep infinity >/dev/null
 docker exec $CONTAINER python -c "import docx, openpyxl, pptx, reportlab" &&
-  echo "Conteneur $CONTAINER pret (fichiers : $FILES_DIR)"
+  echo "Conteneur $CONTAINER pret (fichiers : volume $FILES_VOLUME)"
 
 # Recherche web. SearXNG garde les droits dont son image a besoin au demarrage (changement d'utilisateur).
 # setup-llm-web n'execute que web/server.py, qui refuse les adresses non publiques (LAN, Docker).
